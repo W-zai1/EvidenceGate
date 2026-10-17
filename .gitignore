@@ -1,0 +1,39 @@
+# ---- 本地数据（含个人信息的简历、数据库、密钥，绝不入库）----
+data/
+inputs/
+output/
+*.bak
+*.db
+*.db-wal
+*.db-shm
+
+# ---- 环境变量 / 密钥 ----
+.env
+*.env
+!.env.example
+.secret_key
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- 打包产物（本机工具，不入库）----
+build/
+dist/
+*.spec
+
+# ---- 运行期日志 ----
+*.log

@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>多 Agent 对立式人才筛选 · 招聘工作台</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<canvas id="starfield"></canvas>
+
+<!-- ==================== 登录 / 初始化闸门 ====================
+     这道门不能省：库里存的是真实简历（手机号、学历、工作经历），
+     没有登录就等于把整台机器的招聘数据暴露给任何能打开浏览器的人。 -->
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
+        <path d="M4.5 12.5 L16 20 L4.5 27.5 Z" fill="#6ea8ff" opacity=".85"/>
+        <path d="M35.5 12.5 L24 20 L35.5 27.5 Z" fill="#ff7a9a" opacity=".85"/>
+        <circle cx="20" cy="20" r="3.1" fill="#ffd97a"/>
+      </svg>
+    </div>
+
+    <!-- 首次启动：创建管理员 -->
+    <div id="authSetup" class="hidden">
+      <h2>首次启动 · 创建管理员</h2>
+      <p class="auth-sub">
+        本地数据库还没有任何账号。这个账号拥有全部权限（用户管理、隐私导出/删除）。
+        口令至少 8 位——它保护的是真实候选人的个人信息。
+      </p>
+      <div class="field">
+        <label>管理员账号</label>
+        <input id="setupUser" type="text" value="admin" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>显示名</label>
+        <input id="setupName" type="text" placeholder="例如：HR 主管" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>口令</label>
+        <input id="setupPass" type="password" autocomplete="new-password">
+        <div class="pw-meter"><i id="setupMeter"></i></div>
+        <div class="hint" id="setupHint"></div>
+      </div>
+      <div class="field">
+        <label>再输一次</label>
+        <input id="setupPass2" type="password" autocomplete="new-password">
+      </div>
+      <button class="btn primary lg full" id="setupBtn" onclick="doSetup()">创建并进入</button>
+      <div class="auth-msg" id="setupMsg"></div>
+    </div>
+
+    <!-- 常规登录 -->
+    <div id="authLogin" class="hidden">
+      <h2>招聘工作台</h2>
+      <p class="auth-sub">多 Agent 对立式评审 · 本地部署</p>
+      <div class="field">
+        <label>账号</label>
+        <input id="loginUser" type="text" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>口令</label>
+        <input id="loginPass" type="password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="btn primary lg full" id="loginBtn" onclick="doLogin()">登录</button>
+      <div class="auth-msg" id="loginMsg"></div>
+    </div>
+
+    <div class="auth-note">
+      本工具处理真实个人信息，仅限本机/可信内网使用。所有操作记入不可篡改的审计日志。
+    </div>
+  </div>
+</div>
+
+<div id="intro">
+  <canvas id="introCanvas"></canvas>
+</div>
+
+<header class="pre-intro">
+  <div class="logo" aria-hidden="true">
+    <!-- 正反两方对撞 + 中间的裁判恒星：把"对立式筛选"直接画出来 -->
+    <svg viewBox="0 0 40 40" width="30" height="30">
+      <defs>
+        <linearGradient id="lgPro" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#6ea8ff" stop-opacity=".35"/>
+          <stop offset="1" stop-color="#6ea8ff"/>
+        </linearGradient>
+        <linearGradient id="lgCon" x1="1" y1="0" x2="0" y2="0">
+          <stop offset="0" stop-color="#ff7a9a" stop-opacity=".35"/>
+          <stop offset="1" stop-color="#ff7a9a"/>
+        </linearGradient>
+      </defs>
+      <path d="M4.5 12.5 L16 20 L4.5 27.5 Z" fill="url(#lgPro)"/>
+      <path d="M35.5 12.5 L24 20 L35.5 27.5 Z" fill="url(#lgCon)"/>
+      <circle cx="20" cy="20" r="6.2" fill="#ffd97a" opacity=".16"/>
+      <circle cx="20" cy="20" r="3.1" fill="#ffd97a"/>
+    </svg>
+  </div>
+  <div class="titles">
+    <h1>招聘工作台 · 多 Agent 对立式筛选</h1>
+    <div class="sub">正反 Agent 实时博弈 → 裁判剔除幻觉 → 三评委盲审 → 中位数聚合定级</div>
+  </div>
+  <nav class="topnav">
+    <button class="navbtn on" id="navJobs" onclick="switchView('jobs')">岗位</button>
+    <button class="navbtn" id="navTalent" onclick="switchView('talent')">人才库</button>
+    <button class="navbtn" id="navAnalytics" onclick="switchView('analytics')">分析</button>
+    <button class="navbtn admin-only hidden" id="navAdmin" onclick="switchView('admin')">管理</button>
+  </nav>
+  <div class="spacer"></div>
+  <span class="pending-badge hidden" id="pendingBadge" onclick="switchView('talent');filterPending()"
+        title="有候选人疑似与库中记录是同一人，等待你确认"></span>
+  <button class="btn tiny ghost hidden" id="pendingBatchBtn" onclick="openBatchIdentity()"
+          title="一次确认多条（仅支持「不是同一人」，合并请逐条确认）">批量确认</button>
+  <button class="model-badge" id="modelBadge" onclick="openSettings()" title="点击切换模型">
+    <span class="mb-gear">⚙</span><span id="modelBadgeText">检测中…</span>
+  </button>
+  <button class="user-badge" id="userBadge" onclick="openUserMenu()" title="账号与退出">
+    <span id="userBadgeText">—</span>
+  </button>
+</header>
+
+<main id="app" class="pre-intro">
+
+  <!-- ==================== 一、主界面：仪表盘 + 岗位列表 ==================== -->
+  <section id="viewHome" class="view">
+
+    <div class="dash-head">
+      <div>
+        <h2>招聘工作台</h2>
+        <p class="dash-sub">用多 Agent 对抗式评审，把一份简历变成可解释、可复盘的结论</p>
+      </div>
+      <button class="btn primary lg" onclick="openNewJob()">＋ 新建岗位</button>
+    </div>
+
+    <!-- 环境自检：demo 现场最怕"配好了但跑不起来"却不知道卡在哪 -->
+    <div id="selfcheckBand" class="selfcheck">
+      <div class="sc-head">
+        <b>环境自检</b>
+        <span class="muted" id="scSummary">检查中…</span>
+        <button class="btn tiny ghost" id="scProbeBtn" onclick="probeSelfcheck()"
+                title="会真实发起一次最小模型调用（消耗极少额度）">检测模型连通性</button>
+        <button class="btn tiny ghost" onclick="loadSelfcheck(false)">刷新</button>
+      </div>
+      <div id="scItems" class="sc-items"></div>
+      <div class="hint" id="scNote"></div>
+    </div>
+
+    <!-- 概览 -->
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="sv" id="statJobs">0</div>
+        <div class="sl">在招岗位</div>
+      </div>
+      <div class="stat">
+        <div class="sv" id="statCands">0</div>
+        <div class="sl">候选人</div>
+      </div>
+      <div class="stat">
+        <div class="sv" id="statScored">0</div>
+        <div class="sl">已出结论</div>
+      </div>
+      <div class="stat">
+        <div class="sv" id="statGrade">—</div>
+        <div class="sl">等级分布 A/B/C</div>
+      </div>
+    </div>
+
+    <div class="section-head" id="jobsHead">
+      <h3>在招岗位</h3>
+      <span class="muted" id="jobsCount"></span>
+    </div>
+    <div id="jobGrid" class="job-grid"></div>
+  </section>
+
+  <!-- ==================== 二、岗位工作台 ==================== -->
+  <section id="viewJob" class="view hidden">
+    <button class="btn ghost back-btn" onclick="goHome()">← 返回主页</button>
+
+    <div class="page-head">
+      <div>
+        <h2 id="jobTitle">—</h2>
+        <p class="page-sub" id="jobSub"></p>
+      </div>
+      <div class="head-actions">
+        <span class="badge" id="jobStatusBadge">—</span>
+        <button class="btn" onclick="openJdEditor()">✎ 编辑岗位要求</button>
+        <button class="btn danger-ghost" onclick="confirmDeleteJob()">删除岗位</button>
+      </div>
+    </div>
+
+    <!-- 岗位要求摘要 -->
+    <div id="jdCard" class="card"></div>
+
+    <!-- 候选人素材 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>候选人素材</h3>
+        <div class="head-actions">
+          <button class="btn" onclick="openUpload()">＋ 上传素材</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="candList"></div>
+      </div>
+    </div>
+
+    <!-- 评审 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>评审</h3>
+        <div class="head-actions">
+          <label class="chk"><input type="checkbox" id="optRebuild"> 重跑已评过的</label>
+          <button class="btn danger-ghost hidden" id="cancelRunBtn" onclick="cancelRun()">■ 取消评审</button>
+          <button class="btn primary" id="runBtn" onclick="startRun()">▶ 开始评审</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="runHint" class="hint"></div>
+        <div id="costHint" class="hint cost-hint"></div>
+        <div id="actualHint" class="hint hidden"></div>
+      </div>
+    </div>
+
+    <!-- 实时辩论直播间：可拖动 / 可缩放 / 可最小化的浮窗 -->
+    <div id="liveCard" class="card hidden">
+      <div class="card-head" id="liveHead">
+        <h3>⚔ 辩论直播间 <span class="live-grip-hint">拖动标题移动</span></h3>
+        <div class="head-actions">
+          <span class="badge" id="liveProgress">—</span>
+          <button class="btn ghost" id="liveFollow" onclick="toggleFollow()">自动滚动：开</button>
+          <button class="btn ghost" id="liveDock" onclick="toggleLiveFloat()"
+                  title="在浮窗和页面内嵌之间切换">浮窗</button>
+          <button class="btn ghost" id="liveMin" onclick="toggleLiveMin()"
+                  title="收起只留标题栏">—</button>
+        </div>
+      </div>
+      <div class="card-body" id="liveBody">
+        <div id="liveFeed" class="live-feed"></div>
+      </div>
+    </div>
+
+    <!-- 结果 -->
+    <div id="resultCard" class="card hidden">
+      <div class="card-head">
+        <h3>评审结果</h3>
+        <div class="head-actions">
+          <button class="btn primary" onclick="exportReport()">📄 导出评审报告</button>
+          <button class="btn" onclick="printReport()" title="打开打印预览，可选「另存为 PDF」">🖨 打印 / PDF</button>
+          <button class="btn" onclick="exportJSON()">导出 JSON</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="resultBody"></div>
+      </div>
+    </div>
+
+    <!-- 回测对齐：把 HR 的真实决定变成标准答案 -->
+    <div id="alignCard" class="card hidden">
+      <div class="card-head">
+        <h3>🎯 与实际筛选结果对照（回测）</h3>
+        <div class="head-actions">
+          <button class="btn" onclick="openAlignImport()">＋ 导入真实决定</button>
+          <button class="btn ghost" onclick="loadAlign()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="hint">
+          这一步回答的是<b>最该先问的问题</b>：系统认为该先看的人，
+          和你实际推去面试的人，重合度有多高。<br>
+          没有这一步，分数准不准只能靠感觉；有了它，你才知道该不该信这个排序。
+        </p>
+        <div id="alignBatchList"></div>
+        <div id="alignReport" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 三、人才库（跨岗位） ==================== -->
+  <section id="viewTalent" class="view hidden">
+    <div class="dash-head">
+      <div>
+        <h2>人才库</h2>
+        <p class="dash-sub">所有面过的人沉淀在这里 —— 跨岗位汇总，可以再拉进新岗位复评</p>
+      </div>
+      <div class="head-actions">
+        <input id="talentSearch" class="talent-search" type="search"
+               placeholder="搜索姓名 / 标签 / 备注 / 岗位…"
+               oninput="debouncedTalentSearch()">
+        <div class="seg-mini" id="talentGradeSeg">
+          <button class="segbtn on" data-g="" onclick="setTalentGrade('')">全部</button>
+          <button class="segbtn" data-g="A" onclick="setTalentGrade('A')">A</button>
+          <button class="segbtn" data-g="B" onclick="setTalentGrade('B')">B</button>
+          <button class="segbtn" data-g="C" onclick="setTalentGrade('C')">C</button>
+        </div>
+        <select id="talentStatus" class="talent-sel" onchange="loadTalent()">
+          <option value="">全部状态</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="talentStats"></div>
+
+    <div class="section-head">
+      <h3>人才清单</h3>
+      <span class="muted" id="talentCount"></span>
+    </div>
+    <div id="talentGrid" class="talent-grid"></div>
+  </section>
+
+  <!-- ==================== 四、分析：这套分数到底准不准 ==================== -->
+  <section id="viewAnalytics" class="view hidden">
+    <div class="dash-head">
+      <div>
+        <h2>分析</h2>
+        <p class="dash-sub">
+          这里回答一个问题：<b>本工具的评分，和真实面试结果对得上吗？</b>
+          对不上就说明分数不能用；没数据就说明还不能判断。
+        </p>
+      </div>
+    </div>
+
+    <div class="notice">
+      <b>先看这一条：</b>0–10 分与 A/B/C 等级本身<b>未经校准</b>，
+      是一件"有理由但没证据"的判断。它<b>不能</b>单独作为录用或淘汰依据。
+      翻到下面「命中率」看它目前有没有被验证过。
+    </div>
+
+    <!-- 命中率 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>评分有效性（命中率）</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="loadHitRate()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="hitRateBody">
+        <div class="hint">加载中…</div>
+      </div>
+    </div>
+
+    <!-- 漂移 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>评分口径漂移</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="loadDrift()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="driftBody">
+        <div class="hint">加载中…</div>
+      </div>
+    </div>
+
+    <!-- 校准集 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>人工标定集（检验人机一致性）</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="openNewCalibSet()">＋ 新建标定集</button>
+          <button class="btn small" onclick="loadCalibration()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="calibBody">
+        <div class="hint">加载中…</div>
+      </div>
+    </div>
+
+    <!-- 用量 -->
+    <div class="card">
+      <div class="card-head">
+        <h3>模型用量与成本</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="loadUsage()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="usageBody">
+        <div class="hint">加载中…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 五、管理（仅 admin） ==================== -->
+  <section id="viewAdmin" class="view hidden">
+    <div class="dash-head">
+      <div>
+        <h2>管理</h2>
+        <p class="dash-sub">用户、审计日志、隐私与数据保留</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>用户</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="openNewUser()">＋ 新建用户</button>
+          <button class="btn small" onclick="loadUsers()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="usersBody"><div class="hint">加载中…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>隐私与数据保留</h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="loadPrivacy()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="privacyBody"><div class="hint">加载中…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>审计日志 <span class="muted">SHA-256 哈希链，改一条就断链</span></h3>
+        <div class="head-actions">
+          <button class="btn small" onclick="loadAudit()">刷新</button>
+        </div>
+      </div>
+      <div class="card-body" id="auditBody"><div class="hint">加载中…</div></div>
+    </div>
+  </section>
+</main>
+
+<!-- ==================== 人才详情抽屉 ==================== -->
+<div id="talentDrawer" class="drawer hidden" onclick="if(event.target===this)closeTalent()">
+  <div class="drawer-card">
+    <div class="drawer-head">
+      <div>
+        <h2 id="tdName">—</h2>
+        <div class="drawer-sub" id="tdSub"></div>
+      </div>
+      <button class="modal-x" onclick="closeTalent()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="field">
+        <label>真实进展 <span class="muted">回填后才有"评分是否有效"的数据</span></label>
+        <div class="head-actions">
+          <span class="badge" id="tdStage">—</span>
+          <button class="btn small primary" onclick="openOutcome()">记录进展</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>流转状态 <span class="muted">独立于岗位，岗位删了档案也还在</span></label>
+        <select id="tdStatus" onchange="saveTalentMeta()"></select>
+      </div>
+      <div class="field">
+        <label>备注</label>
+        <textarea id="tdNote" rows="2" placeholder="例如：沟通能力强，可考虑其他岗位"
+                  oninput="debouncedSaveNote()"></textarea>
+      </div>
+      <div class="field">
+        <label>拉进岗位复评 <span class="muted">复用已上传的材料，无需重新上传</span></label>
+        <div class="head-actions">
+          <select id="tdJobSel" class="talent-sel"></select>
+          <button class="btn primary small" onclick="importToJob()">加入该岗位</button>
+        </div>
+        <div class="wb-status" id="tdImportMsg"></div>
+      </div>
+      <div class="field">
+        <label>评审履历</label>
+        <div id="tdHistory" class="td-history"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 模型设置 ==================== -->
+<div id="settingsModal" class="modal hidden" onclick="if(event.target===this)cancelSettings()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>⚙ 模型设置</h2>
+      <button class="modal-x" onclick="cancelSettings()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>供应商 / 预设</label>
+        <select id="cfgProvider" onchange="onProviderChange()">
+          <option value="workbuddy">WorkBuddy（复用本机积分）</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="qwen">通义千问 DashScope</option>
+          <option value="ollama">Ollama（本地）</option>
+          <option value="">自定义（OpenAI 兼容）</option>
+        </select>
+      </div>
+      <div class="field hidden" id="cfgWorkBuddyHint">
+        <span class="wb-status" id="cfgWorkBuddyStatus">（打开面板时自动检测）</span>
+        <div class="wb-credits hidden" id="cfgWorkBuddyCredits"></div>
+      </div>
+      <div class="field" id="cfgKeyRow">
+        <label>API Key <span class="muted">（仅本次会话内存使用，不保存）</span></label>
+        <input id="cfgKey" type="password" placeholder="sk-..." autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Base URL <span class="muted">选预设可留空自动填</span></label>
+        <input id="cfgBase" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>模型名 <span class="muted">（从下拉选，或在下方手填）</span></label>
+        <select id="cfgModelPick" onchange="onPickModel()">
+          <option value="">— 暂无列表，点下方「读取可用模型」—</option>
+        </select>
+        <input id="cfgModel" type="text" placeholder="也可直接手填模型名" autocomplete="off">
+        <div id="cfgProbeRow">
+          <button class="btn small" id="cfgListBtn" type="button" onclick="probeModels()">读取可用模型</button>
+          <button class="btn small" id="cfgTestBtn" type="button" onclick="probeTest()">测试连通性</button>
+          <div class="wb-status" id="cfgTestResult"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>当前评分口径 <span class="muted">（改模型/权重/提示词都会让它变）</span></label>
+        <div id="cfgRubric" class="rubric-box"><span class="muted">打开面板时自动读取</span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="cancelSettings()">取消</button>
+        <button class="btn primary" onclick="closeSettings()">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 评审细则（权重 + 每维看什么） ==================== -->
+<div id="rubricModal" class="modal hidden" onclick="if(event.target===this)closeRubricEditor()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>评审细则与权重</h2>
+      <button class="modal-x" onclick="closeRubricEditor()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        权重没有正确答案，它表达的是<b>你认为什么更重要</b>。改完之后口径版本号会变，
+        新结果与该岗位已有的旧结果<b>不可直接比较</b>——这一点系统会替你在卡片上标出来。
+      </p>
+      <div id="rubricBlocked" class="align-warn hidden"></div>
+
+      <div class="field">
+        <label>从岗位类型套用一组起点 <span class="muted">（可再手改）</span></label>
+        <select id="rbPreset" onchange="onPresetChange()">
+          <option value="">— 选择岗位类型 —</option>
+        </select>
+        <div id="rbPresetWhy" class="rubric-why" style="margin-top:7px"></div>
+      </div>
+
+      <div class="field">
+        <label>三个维度的权重</label>
+        <div id="rbWeights"></div>
+        <div id="rbWeightSum" class="hint"></div>
+      </div>
+
+      <div class="field">
+        <label>每个维度「看什么」<span class="muted">（会直接进入评委的提示词）</span></label>
+        <div id="rbCriteria"></div>
+      </div>
+
+      <div class="field">
+        <label>补充说明 <span class="muted">（可选，例如团队的硬规矩）</span></label>
+        <textarea id="rbNotes" rows="2" maxlength="800"></textarea>
+      </div>
+
+      <div id="rbImpact" class="hint"></div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeRubricEditor()">取消</button>
+        <button class="btn primary" id="rbSaveBtn" onclick="saveRubric()">保存细则</button>
+      </div>
+      <div class="auth-msg" id="rbMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 批量确认身份 ====================
+     只支持"确认不是同一人"。合并（确认为同一人）必须逐条做：
+     合并会改写 person_id 并可能连带合并档案，一次点错几十条无法核对。 -->
+<div id="batchIdentityModal" class="modal hidden" onclick="if(event.target===this)closeBatchIdentity()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>批量确认身份</h2>
+      <button class="modal-x" onclick="closeBatchIdentity()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        这里只处理"<b>确认是两个不同的人</b>"。如果要合并成同一个人，
+        请逐条点开确认 —— 合并会改写档案归属，批量做无法逐条核对。
+      </p>
+      <div class="modal-actions" style="margin-bottom:10px">
+        <label class="chk"><input type="checkbox" id="batchAll" onchange="toggleBatchAll(this.checked)">
+          全选</label>
+        <button class="btn primary" onclick="submitBatchIdentity()">确认所选「不是同一人」</button>
+      </div>
+      <div id="batchIdentityBox"><p class="muted">加载中…</p></div>
+      <div class="auth-msg" id="batchIdentityMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 数据备份 ==================== -->
+<div id="backupModal" class="modal hidden" onclick="if(event.target===this)closeBackup()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>数据备份</h2>
+      <button class="modal-x" onclick="closeBackup()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        整个系统的留痕（候选人、评审历史、决策理由、审计链）都在这一个 SQLite 文件里。
+        没有备份，任何一次磁盘故障都会让"可追溯"变成一句空话。
+        <br>备份是普通 <code>.db</code> 文件，可以直接拷到别处做异地副本。
+      </p>
+      <div class="modal-actions" style="margin-bottom:12px">
+        <button class="btn primary" onclick="doBackup()">立即备份</button>
+      </div>
+      <div id="backupMsg" class="auth-msg"></div>
+      <div id="backupBox"><p class="muted">加载中…</p></div>
+      <p class="hint" style="margin-top:12px">
+        ⚠ 恢复会<b>覆盖当前所有数据</b>。恢复前建议先点一次「立即备份」，
+        这样即使恢复错了也还能退回来。
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 新建/编辑岗位要求 ==================== -->
+<div id="jdModal" class="modal hidden" onclick="if(event.target===this)closeJd()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2 id="jdModalTitle">新建岗位</h2>
+      <button class="modal-x" onclick="closeJd()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="steps">
+        <div class="step on" id="jdStep1"><b>1</b><span>录入招聘要求</span></div>
+        <div class="step" id="jdStep2"><b>2</b><span>核对结构化结果</span></div>
+      </div>
+
+      <div class="field">
+        <label>岗位名称</label>
+        <input id="jdTitle" type="text" placeholder="例如：高级后端工程师" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label>从模板快速开始 <span class="muted">点一下自动填入，再按需修改</span></label>
+        <div class="tpl-row" id="jdTemplates"></div>
+      </div>
+
+      <div class="field">
+        <label>招聘要求 <span class="muted">直接粘贴，或上传文档/截图后由模型自动结构化</span></label>
+        <textarea id="jdRaw" rows="7" placeholder="把 HR 写的招聘要求贴在这里，例如：&#10;硬性要求：8年以上后端开发经验；精通 Go 或 Java…&#10;加分项：亿级流量重构经验…&#10;风险红线：近两年频繁跳槽…"></textarea>
+        <div class="row-actions">
+          <button class="btn small" type="button" onclick="document.getElementById('jdFiles').click()">📎 上传文档/截图</button>
+          <input type="file" id="jdFiles" multiple accept=".docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" class="hidden" onchange="onJdFilesPicked(this)">
+          <button class="btn small primary" type="button" id="jdStructBtn" onclick="structureJd()">✨ 让模型结构化</button>
+        </div>
+        <div class="wb-status" id="jdStructMsg"></div>
+        <div id="jdFilesList" class="file-list"></div>
+      </div>
+
+      <!-- 结构化结果（可微调） -->
+      <div id="jdEdit" class="hidden">
+        <hr class="sep">
+        <div class="field">
+          <label>岗位概述</label>
+          <input id="jdSummary" type="text" placeholder="一句话概括要什么样的人">
+        </div>
+        <div class="grid-3">
+          <div class="field">
+            <label>硬性要求 <span class="muted">不满足即淘汰</span></label>
+            <div class="list-editor" id="jdReq"></div>
+            <button class="btn tiny" type="button" onclick="addListItem('jdReq')">＋ 添加</button>
+          </div>
+          <div class="field">
+            <label>优先项 <span class="muted">加分但不致命</span></label>
+            <div class="list-editor" id="jdPref"></div>
+            <button class="btn tiny" type="button" onclick="addListItem('jdPref')">＋ 添加</button>
+          </div>
+          <div class="field">
+            <label>风险红线 <span class="muted">需要警惕的信号</span></label>
+            <div class="list-editor" id="jdRed"></div>
+            <button class="btn tiny" type="button" onclick="addListItem('jdRed')">＋ 添加</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>维度权重 <span class="muted">会自动归一化</span></label>
+          <div class="weights-row" id="jdWeights"></div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeJd()">取消</button>
+        <button class="btn primary" id="jdSaveBtn" onclick="saveJd()">保存岗位</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 上传候选人素材 ==================== -->
+<div id="upModal" class="modal hidden" onclick="if(event.target===this)closeUpload()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>上传候选人素材</h2>
+      <button class="modal-x" onclick="closeUpload()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>候选人姓名 <span class="muted">留空则从文件名自动识别</span></label>
+        <input id="upName" type="text" placeholder="例如：林晚（多个候选人可留空，按文件名分组）" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>素材文件 <span class="muted">简历 / 测评；支持 docx、pdf、txt、md、图片</span></label>
+        <div id="upDrop" class="drop-zone">
+          <div class="drop-ico">⬆</div>
+          <div>把文件拖到这里，或 <span class="link" onclick="document.getElementById('upFiles').click()">点击选择</span></div>
+          <div class="hint">文件名带「测评/assessment」会自动归为测评，其余视为简历</div>
+        </div>
+        <input type="file" id="upFiles" multiple accept=".docx,.pdf,.txt,.md,.json,.png,.jpg,.jpeg,.webp" class="hidden" onchange="onUpFilesPicked(this)">
+        <div id="upFilesList" class="file-list"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeUpload()">取消</button>
+        <button class="btn primary" id="upBtn" onclick="doUpload()">上传并解析</button>
+      </div>
+      <div id="upMsg" class="wb-status"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toastHost"></div>
+
+<!-- ==================== 疑似同一人确认（P0-4 人工闸门） ====================
+     系统判"不确定"时绝不自动合并，而是把材料摆给 HR 看，
+     由人决定这两个档案是不是同一个人。 -->
+<div id="identityModal" class="modal hidden" onclick="if(event.target===this)closeIdentity()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>这两个档案是同一个人吗？</h2>
+      <button class="modal-x" onclick="closeIdentity()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        系统按<b>姓名 / 学历 / 工作经历 / 所在地 / 出生年份</b>做多信号比对，
+        本次得分落在"不确定"区间，因此<b>没有自动合并</b>。
+        请对照下面的差异自行判断。
+      </p>
+      <div id="identityBody"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeIdentity()">稍后再决定</button>
+        <button class="btn" onclick="resolveIdentity(false)">不是同一人</button>
+        <button class="btn primary" onclick="resolveIdentity(true)">是同一人，合并档案</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 结果回填 ==================== -->
+<div id="outcomeModal" class="modal hidden" onclick="if(event.target===this)closeOutcome()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>记录真实进展</h2>
+      <button class="modal-x" onclick="closeOutcome()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        这一步决定这套评分有没有价值：只有把真实面试结果回填回来，
+        "高分是否真的更有戏"才能被检验。不回填，评分就永远只是猜测。
+      </p>
+      <div class="field">
+        <label>当前进展</label>
+        <select id="ocStage"></select>
+      </div>
+      <div class="field">
+        <label>备注 <span class="muted">可选</span></label>
+        <textarea id="ocNote" rows="2" placeholder="例如：技术面通过，卡在薪资"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeOutcome()">取消</button>
+        <button class="btn primary" onclick="saveOutcome()">保存</button>
+      </div>
+      <div class="auth-msg" id="ocMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 回测对齐：导入真实决定 ==================== -->
+<div id="alignModal" class="modal hidden" onclick="if(event.target===this)closeAlign()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>导入 HR 的真实决定</h2>
+      <button class="modal-x" onclick="closeAlign()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        把「这一批简历里，谁被推去面试、谁被淘汰」贴进来，系统就能算出
+        <b>它排的前 N 名里有几个和你的决定一致</b>。<br>
+        直接从 Excel 复制粘贴即可（支持逗号或制表符分隔），第一行是表头，
+        需要包含<b>姓名</b>和<b>决定</b>两列；可再加一列<b>备注</b>。
+        决定列请用「推进 / 淘汰 / 待定」。
+      </p>
+      <div class="field">
+        <label>批次名称 <span class="muted">便于日后区分</span></label>
+        <input id="alignLabel" type="text" placeholder="例如：2026-03 高级后端 200 人">
+      </div>
+      <div class="field">
+        <label>粘贴内容</label>
+        <textarea id="alignText" rows="9" placeholder="姓名,决定,备注
+张三,推进,背景匹配
+李四,淘汰,方向不符
+王五,待定,等用人经理确认"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeAlign()">取消</button>
+        <button class="btn" onclick="previewAlign()">先预览</button>
+        <button class="btn primary" onclick="saveAlign()">导入</button>
+      </div>
+      <div id="alignPreviewBox" style="margin-top:12px"></div>
+      <div class="auth-msg" id="alignMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 候选人决策 ==================== -->
+<div id="decideModal" class="modal hidden" onclick="if(event.target===this)closeDecide()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>记录决定</h2>
+      <button class="modal-x" onclick="closeDecide()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        决定必须由人来做，并且留下理由 —— 这是可申诉性的最低要求。
+        系统只提供证据，不替你做决定。
+      </p>
+      <div class="field">
+        <label>候选人</label>
+        <div id="decideName" class="muted">—</div>
+      </div>
+      <div class="field">
+        <label>决定</label>
+        <select id="decideChoice">
+          <option value="advance">推进面试</option>
+          <option value="reject">淘汰</option>
+          <option value="hold">待定</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>理由 <span class="req">必填</span></label>
+        <textarea id="decideReason" rows="3"
+                  placeholder="例如：清华本科+6年后端，与 JD 的 Go/分布式要求高度匹配；争议点「是否带过团队」需在面试中核实"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeDecide()">取消</button>
+        <button class="btn primary" onclick="saveDecide()">保存决定</button>
+      </div>
+      <div class="auth-msg" id="decideMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 待绑定：同名/找不到人的真实决定 ==================== -->
+<div id="bindModal" class="modal hidden" onclick="if(event.target===this)closeBind()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>待绑定的真实决定</h2>
+      <button class="modal-x" id="btnBindClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        同名的人不会被自动合并 —— 把一个人的决定算到另一个人头上，
+        会让命中率凭空变好或变差，而界面上看不出来。
+        这里由你对照学历、城市、工作经历等线索自己认。
+      </p>
+      <div id="bindBox"><p class="muted">加载中…</p></div>
+      <div class="auth-msg" id="bindMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 评审历史 ==================== -->
+<div id="histModal" class="modal hidden" onclick="if(event.target===this)closeHistory()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>评审历史</h2>
+      <button class="modal-x" onclick="closeHistory()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        同一个人的历次评审。如果分数在几次之间跨了档位，
+        说明"他是 A 级"这个结论不该被当成事实使用。
+      </p>
+      <div id="histBox"><p class="muted">加载中…</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 用户菜单 ==================== -->
+<div id="userModal" class="modal hidden" onclick="if(event.target===this)closeUserMenu()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>账号</h2>
+      <button class="modal-x" onclick="closeUserMenu()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="userInfo" class="hint"></div>
+      <hr class="sep">
+      <div class="field">
+        <label>当前口令</label>
+        <input id="pwOld" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label>新口令 <span class="muted">至少 8 位</span></label>
+        <input id="pwNew" type="password" autocomplete="new-password" oninput="renderPwMeter()">
+        <div class="pw-meter"><i id="pwMeter"></i></div>
+        <div class="hint" id="pwHint"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="openBackup()" id="btnOpenBackup">数据备份</button>
+        <button class="btn danger-ghost" onclick="doLogout()">退出登录</button>
+        <button class="btn primary" onclick="doChangePassword()">修改口令</button>
+      </div>
+      <div class="auth-msg" id="pwMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 新建用户 ==================== -->
+<div id="newUserModal" class="modal hidden" onclick="if(event.target===this)closeNewUser()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>新建用户</h2>
+      <button class="modal-x" onclick="closeNewUser()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>账号</label>
+        <input id="nuUser" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>显示名</label>
+        <input id="nuName" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>角色</label>
+        <select id="nuRole">
+          <option value="hr">招聘（可上传、评审、回填）</option>
+          <option value="viewer">只读（只能看结果）</option>
+          <option value="admin">管理员（含用户管理与隐私操作）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>初始口令</label>
+        <input id="nuPass" type="password" autocomplete="new-password">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeNewUser()">取消</button>
+        <button class="btn primary" onclick="doCreateUser()">创建</button>
+      </div>
+      <div class="auth-msg" id="nuMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 新建标定集 ==================== -->
+<div id="calibSetModal" class="modal hidden" onclick="if(event.target===this)closeNewCalibSet()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>新建标定集</h2>
+      <button class="modal-x" onclick="closeNewCalibSet()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        标定集 = 一批<b>已由资深面试官人工定级</b>的候选人。
+        用它检验"模型给出的等级"和"人给的等级"是否一致。
+        不一致不代表模型错，但一致率过低说明它不能替代人。
+      </p>
+      <div class="field">
+        <label>名称</label>
+        <input id="csName" type="text" placeholder="例如：2026 后端岗人工标定">
+      </div>
+      <div class="field">
+        <label>说明</label>
+        <textarea id="csDesc" rows="2" placeholder="这批样本的代表性、谁定的级、什么时候定的"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeNewCalibSet()">取消</button>
+        <button class="btn primary" onclick="doCreateCalibSet()">创建</button>
+      </div>
+      <div class="auth-msg" id="csMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 候选人对比 ==================== -->
+<div id="compareBar" class="compare-bar hidden">
+  <span id="compareCount">已选 0 人</span>
+  <button class="btn small" onclick="clearCompare()">清空</button>
+  <button class="btn primary small" onclick="openCompare()">开始对比 →</button>
+</div>
+
+<div id="compareModal" class="modal hidden" onclick="if(event.target===this)closeCompare()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>候选人对比</h2>
+      <div class="head-actions">
+        <button class="btn small" onclick="exportCompare()">导出对比</button>
+        <button class="modal-x" onclick="closeCompare()">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="compareBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

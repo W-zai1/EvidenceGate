@@ -1,0 +1,127 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # 这个项目刻意零第三方依赖，所以没有 pip install。
+      # 如果哪天有人偷偷加了依赖，下面这一步会硬失败。
+      - name: 校验零依赖
+        run: python tests/check_no_deps.py
+
+      # 这两条是被真实事故加上的：一个孤立的 U+FEFF 让整条 CSS 规则
+      # 静默失效（登录框贴在左上角），而所有语法检查都是绿的。
+      - name: 校验文件编码（中途 BOM）
+        run: python tests/check_bom.py
+
+      - name: 校验形近字符（假连字符 / 全角符号进标识符）
+        run: python tests/check_lookalike.py
+
+      - name: 语法编译
+        run: python -m compileall -q engine skills tests tools
+
+      - name: 单元测试
+        working-directory: tests
+        run: python test_unit.py
+
+      - name: 端到端测试
+        working-directory: tests
+        run: python test_e2e.py
+
+      - name: 验收测试（逐项验证 2.3 的 16 个交付点）
+        working-directory: tests
+        run: python test_acceptance.py
+
+      - name: 回测对齐（precision@k 算术 + 样本纪律）
+        working-directory: tests
+        run: python test_align.py
+
+      - name: 回测对齐端到端（真实 HTTP）
+        working-directory: tests
+        run: python test_align_e2e.py
+
+      - name: 200 人规模（并发/事件完整性/对齐报告）
+        working-directory: tests
+        run: python test_scale.py
+
+      - name: 口径可复现性（提示词指纹 / 温度进签名）
+        working-directory: tests
+        run: python test_provenance.py
+
+      - name: 不确定度（bootstrap 置信区间 / 样本纪律）
+        working-directory: tests
+        run: python test_uncertainty.py
+
+      - name: 重复评审（中位数/方差/跨档告警/失败容忍）
+        working-directory: tests
+        run: python test_repeats.py
+
+      - name: 同名歧义与人工绑定
+        working-directory: tests
+        run: python test_binding.py
+
+      - name: 评审细则与权重（预设/规范化/指纹/进提示词）
+        working-directory: tests
+        run: python test_rubric.py
+
+      - name: 流式输出（增量不落库 / 能到客户端 / 断流兜底）
+        working-directory: tests
+        run: python test_streaming.py
+
+      - name: 辩论历史预算守卫（裁剪 / 留痕 / 裁判与评委一致）
+        working-directory: tests
+        run: python test_debate_budget.py
+
+      - name: 状态机端点隔离（通用 PATCH 不能改状态）
+        working-directory: tests
+        run: python test_state_guard.py
+
+      - name: 启动环境自检（探测默认不发 / 缓存 / 匿名脱敏）
+        working-directory: tests
+        run: python test_selfcheck.py
+
+      - name: 批量身份确认（部分成功 / 超限拒绝 / 审计）
+        working-directory: tests
+        run: python test_identity_batch.py
+
+      - name: 评审追加历史（migration 7）
+        working-directory: tests
+        run: python test_evaluations.py
+
+      - name: 备份与恢复
+        working-directory: tests
+        run: python test_backup.py
+
+      - name: 基础设施（并发闸门 / 上下文截断）
+        working-directory: tests
+        run: python test_infra.py
+
+      - name: 度量链路端到端（真实 HTTP：备份/绑定/历史/口径）
+        working-directory: tests
+        run: python test_measurement_e2e.py
+
+      - name: 交付项静态核验
+        run: python tests/check_all_items.py
+
+      - name: 前端一致性
+        working-directory: tests
+        run: python test_viewer.py

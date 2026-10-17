@@ -1,0 +1,4 @@
+# cmd.exe requires CRLF for .bat/.cmd; LF + non-ASCII causes line-offset misalignment
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
