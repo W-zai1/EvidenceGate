@@ -25,6 +25,10 @@ const state = {
   currentRunId: null,
   streamClose: null,
   talentPerson: null,   // 抽屉里当前的人
+  users: [],            // 用户管理列表（重置口令时按 id 反查，不拼进 HTML 属性）
+  calibSets: [],        // 标定集列表（添加条目时选集合用）
+  resetPwTarget: null,  // 正在重置口令的用户
+  candEditTarget: null, // 正在编辑姓名的候选人
 };
 
 const DIMENSIONS = ["岗位能力匹配度", "风险与软素质", "硬实力门槛"];
@@ -583,15 +587,26 @@ async function openTalent(tid) {
       : `<div class="hint">这个人还没有评审记录。</div>`;
 
     // 进展时间线
+    // 每条都能删：回填是"评分准不准"的唯一数据来源，记错一条不改，
+    // 命中率就被污染了。删除权跟记录权一致（outcome.write）。
+    const canDelOutcome = can("outcome.write");
     const outs = (p.outcomes || []).length
       ? `<div class="td-outcomes">${p.outcomes.map(o =>
           `<div class="td-outcome"><span class="muted">${esc((o.reached_at || "").slice(0, 10))}</span>
              <b>${esc(stageLabel[o.stage] || o.stage)}</b>
-             ${o.note ? `<span class="muted">${esc(o.note)}</span>` : ""}</div>`).join("")}</div>`
+             ${o.note ? `<span class="muted">${esc(o.note)}</span>` : ""}${
+               canDelOutcome
+                 ? `<button class="btn tiny danger-ghost" title="删掉这条记错的进展"
+                      onclick="deleteOutcomeRow('${esc(o.id)}')">✕</button>` : ""}</div>`).join("")}</div>`
       : `<div class="hint">还没有回填真实进展。不回填，就无法验证评分是否有效。</div>`;
 
     $("tdHistory").innerHTML = hist + `<div class="field" style="margin-top:14px">
       <label>真实进展</label>${outs}</div>`;
+    // 数据权利按钮按权限显示：viewer 只读；hr 与 admin 有 talent.write /
+    // settings.write。按钮隐藏比点了再吃 403 好——404 的按钮等于没有。
+    $("btnDeletePerson").classList.toggle("hidden", !can("talent.write"));
+    $("btnExportPerson").classList.toggle("hidden", !can("settings.write"));
+    $("btnErasePerson").classList.toggle("hidden", !can("settings.write"));
     $("talentDrawer").classList.remove("hidden");
   } catch (e) {
     toast("打开失败：" + e.message, "err");
@@ -615,6 +630,75 @@ async function saveTalentMeta() {
 function debouncedSaveNote() {
   clearTimeout(noteTimer);
   noteTimer = setTimeout(saveTalentMeta, 700);
+}
+
+/* ---- 人才档案的数据权利（PIPL 第 15/37/45 条）----
+   导出 = 查阅权；擦除 = 删除权；删档案 = 人才库自己的清理。
+   三者的破坏力不同，措辞和确认次数也不同：导出可重来，删档案可重建，
+   擦除不可逆——所以只有擦除要求二次确认（确认框本身算一次，
+   这里再要求输入人名，手滑点不中）。 */
+
+async function exportPersonData() {
+  const p = state.talentPerson;
+  if (!p) return;
+  if (!confirm(`导出「${p.name}」的全部数据？\n\n` +
+      "导出物包含明文个人信息（姓名、联系方式、材料全文），" +
+      "请按内部数据管理规定保存，勿随意转发。")) return;
+  try {
+    const r = await API.exportPerson(p.id);
+    const blob = new Blob([JSON.stringify(r.export || r, null, 2)],
+                          { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "person-" + p.id + "-export.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    toast("已导出（含明文个人信息，注意保存）", "ok");
+  } catch (e) { toast("导出失败：" + e.message, "err"); }
+}
+
+async function erasePersonData() {
+  const p = state.talentPerson;
+  if (!p) return;
+  const typed = prompt(`擦除「${p.name}」的全部数据？\n\n` +
+      "这会删除此人的材料、档案与评审关联，且不可恢复。\n" +
+      `如确认，请输入此人姓名「${p.name}」：`);
+  if (typed === null) return;
+  if (typed.trim() !== p.name) { toast("姓名不匹配，已取消", "info"); return; }
+  try {
+    await API.erasePerson(p.id);
+    closeTalent();
+    toast("已擦除", "ok");
+    loadTalent();
+  } catch (e) { toast("擦除失败：" + e.message, "err"); }
+}
+
+/* 删除档案：档案没了，各岗位内的历史评审记录保留——
+   评审记录属于岗位的历史，删档案不该篡改已经发生的事。 */
+async function deleteTalentPerson() {
+  const p = state.talentPerson;
+  if (!p) return;
+  if (!confirm(`从人才库删除「${p.name}」的档案？\n\n` +
+      "各岗位内的历史评审记录会保留，但此人不再出现在人才库搜索里。")) return;
+  try {
+    await API.deleteTalent(p.id);
+    closeTalent();
+    toast("已删除档案", "ok");
+    loadTalent();
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
+}
+
+/* 删掉一条记错的进展。 */
+async function deleteOutcomeRow(oid) {
+  if (!oid) return;
+  if (!confirm("删除这条进展记录？\n\n它会参与命中率计算，删错会影响统计。")) return;
+  try {
+    await API.deleteOutcome(oid);
+    toast("已删除", "ok");
+    if (state.talentPerson) openTalent(state.talentPerson.id);
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
 }
 
 async function importToJob() {
@@ -990,6 +1074,7 @@ function renderCandidates() {
         ${c.result ? `<button class="btn tiny" data-decide-id="${esc(c.id)}"
             data-decide-name="${esc(c.name)}"
             data-decide-cur="${esc(c.decision || "")}">${c.decision ? "改决定" : "记录决定"}</button>` : ""}
+        <button class="btn tiny" onclick="openCandEdit('${c.id}')">编辑</button>
         <button class="btn tiny danger-ghost" data-del-cand="${esc(c.id)}">删除</button>
       </div>
     </div>`;
@@ -1063,6 +1148,40 @@ async function deleteCandidate(id) {
     return;
   }
   await openJob(state.job.id);
+}
+
+/* 编辑候选人：只改姓名。后端 PUT 已收窄为内容字段白名单
+   （store.CAND_HTTP_PATCHABLE），状态 / 结果 / 身份在这里改不动——
+   它们必须走各自的专用端点，才能保住状态机和留痕。 */
+function openCandEdit(cid) {
+  const c = state.candidates.find(x => x.id === cid);
+  if (!c) { toast("找不到该候选人，请刷新岗位", "err"); return; }
+  state.candEditTarget = c;
+  $("ceName").value = c.name || "";
+  $("ceMsg").textContent = "";
+  $("candEditModal").classList.remove("hidden");
+}
+function closeCandEdit() {
+  $("candEditModal").classList.add("hidden");
+  state.candEditTarget = null;
+}
+
+async function saveCandEdit() {
+  const c = state.candEditTarget;
+  if (!c) return;
+  const name = ($("ceName").value || "").trim();
+  if (!name) { $("ceMsg").textContent = "姓名不能为空"; return; }
+  const msg = $("ceMsg");
+  msg.textContent = "保存中…";
+  try {
+    await API.updateCandidate(c.id, { name: name });
+    msg.textContent = "";
+    closeCandEdit();
+    c.name = name;
+    renderCandidates();
+    refreshPendingIdentity();
+    toast("已保存", "ok");
+  } catch (e) { msg.textContent = e.message; }
 }
 
 /* ===================== 评审 ===================== */
@@ -3061,6 +3180,35 @@ function openIdentityConfirm(candId) {
     <div class="notice warn">
       <b>为什么没有自动合并：</b>把两个人的材料混成一份评审结论，
       比多一张待确认的卡片危险得多。所以系统只在信号高度一致时才自动合并。
+    </div>
+    <div>
+      <button class="btn tiny ghost" onclick="toggleManualCompare()">系统的判断准不准？自己验一下</button>
+      <div id="manualCompareBox" class="hidden" style="margin-top:10px">
+        <p class="hint">
+          粘贴两份材料的姓名与全文，用同一套规则再比对一次（PIPL 第 24 条：
+          你有权知道系统为什么认为这是同一个人）。结果只解释规则，不替代你的判断。
+        </p>
+        <div class="field">
+          <label>材料 A 姓名</label>
+          <input id="mcNameA" type="text" value="${esc(c.name)}">
+        </div>
+        <div class="field">
+          <label>材料 A 全文</label>
+          <textarea id="mcTextA" rows="3" placeholder="粘贴简历 / 测评全文"></textarea>
+        </div>
+        <div class="field">
+          <label>材料 B 姓名</label>
+          <input id="mcNameB" type="text" value="${esc(sug.name || "")}">
+        </div>
+        <div class="field">
+          <label>材料 B 全文</label>
+          <textarea id="mcTextB" rows="3" placeholder="粘贴另一份材料的全文"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn small primary" onclick="runManualCompare()">比对</button>
+        </div>
+        <div id="mcResult"></div>
+      </div>
     </div>`;
   $("identityModal").classList.remove("hidden");
 }
@@ -3097,6 +3245,56 @@ async function resolveIdentity(isSame) {
   } catch (e) {
     toast("操作失败：" + e.message, "err");
   }
+}
+
+/* ---- 手工比对：可解释性的人工闸门 ----
+   compare_profiles 的裁决逻辑对 HR 是个黑盒。给一个入口把两份材料
+   重新喂进同一套规则，输出一致的信号、冲突的信号和判定理由——
+   规则说得对不对，人眼能验；验不过，就别采信系统的合并建议。 */
+function toggleManualCompare() {
+  $("manualCompareBox").classList.toggle("hidden");
+}
+
+async function runManualCompare() {
+  const box = $("mcResult");
+  const nameA = ($("mcNameA").value || "").trim();
+  const nameB = ($("mcNameB").value || "").trim();
+  const textA = $("mcTextA").value || "";
+  const textB = $("mcTextB").value || "";
+  if (!textA.trim() || !textB.trim()) {
+    box.innerHTML = `<p class="err">两份材料都要贴全文才能比对。</p>`;
+    return;
+  }
+  box.innerHTML = `<p class="muted">比对中…</p>`;
+  try {
+    const r = await API.compareIdentity({
+      name_a: nameA, text_a: textA, name_b: nameB, text_b: textB,
+    });
+    box.innerHTML = renderCompareResult(r.result || {});
+  } catch (e) {
+    box.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+  }
+}
+
+function renderCompareResult(res) {
+  const vmap = {
+    same: ["同一人", "ok"], different: ["不同的人", "bad"], uncertain: ["不确定", "warn"],
+  };
+  const v = vmap[res.verdict] || ["—", ""];
+  const scoreTxt = res.score == null
+    ? "" : ` · 相似度 ${(res.score * 100).toFixed(0)}%`;
+  return `
+    <div class="id-line"><span>判定</span>
+      <b class="${v[1]}-text">${v[0]}</b>${scoreTxt}</div>
+    ${(res.matched || []).length
+      ? `<div class="id-line"><span>一致</span>
+           <span class="ok-text">${(res.matched || []).map(esc).join("；")}</span></div>` : ""}
+    ${(res.conflicts || []).length
+      ? `<div class="id-line"><span>冲突</span>
+           <span class="bad-text">${(res.conflicts || []).map(esc).join("；")}</span></div>` : ""}
+    ${(res.reasons || []).length
+      ? `<ul class="id-reasons">${(res.reasons || []).map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    <div class="hint">这只是同一套比对规则的解释视图，最终决定权在你。</div>`;
 }
 
 /* ===================== 结果回填 ===================== */
@@ -3226,9 +3424,14 @@ async function loadCalibration() {
     const r = await API.calibration();
     const rep = r.report || {};
     const sets = r.sets || [];
+    state.calibSets = sets;
     box.innerHTML = `
+      <div class="head-actions" style="margin-bottom:10px">
+        <button class="btn small primary" onclick="openCalibItem()"
+          ${sets.length ? "" : "disabled title='先在上面新建一个标定集'"}>添加标定条目</button>
+      </div>
       ${sets.length ? `<div class="hint">标定集：${sets.map(s =>
-        `<b>${esc(s.name)}</b>（${s.items || 0} 条）`).join("、")}</div>` : ""}
+        `<b>${esc(s.name)}</b>（${s.item_count || 0} 条）`).join("、")}</div>` : ""}
       ${rep.sufficient === false
         ? `<div class="notice">${esc(rep.message || "还没有标定数据。")}
              <div class="hint" style="margin-top:8px">
@@ -3306,20 +3509,62 @@ async function doCreateCalibSet() {
   } catch (e) { msg.textContent = e.message; }
 }
 
+/* 添加标定条目：把"人给的等级"登记进标定集。
+   只列当前岗位已有评分的候选人——没评分的人没有"模型给的等级"可对比，
+   加进去只会稀释一致率。 */
+function openCalibItem() {
+  const sets = state.calibSets || [];
+  if (!sets.length) { toast("先在上面新建一个标定集", "info"); return; }
+  const scored = (state.candidates || []).filter(c => c.result && c.result.total != null);
+  if (!scored.length) { toast("当前岗位还没有已评分的候选人，先跑一轮评审", "info"); return; }
+  $("ciSet").innerHTML = sets.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.name)}（${s.item_count || 0} 条）</option>`).join("");
+  $("ciCand").innerHTML = scored.map(c =>
+    `<option value="${esc(c.id)}">${esc(c.name)} · 模型评 ${esc(c.result.total)} 分（${esc(c.result.grade || "?")}）</option>`).join("");
+  $("ciLabel").value = "B";
+  $("ciNote").value = "";
+  $("ciMsg").textContent = "";
+  $("calibItemModal").classList.remove("hidden");
+}
+function closeCalibItem() { $("calibItemModal").classList.add("hidden"); }
+
+async function saveCalibItem() {
+  const msg = $("ciMsg");
+  const set_id = $("ciSet").value, cand = $("ciCand").value;
+  if (!set_id || !cand) { msg.textContent = "请选择标定集和候选人"; return; }
+  msg.textContent = "提交中…";
+  try {
+    await API.addCalibItem({
+      set_id: set_id,
+      candidate_id: cand,
+      human_label: $("ciLabel").value,
+      note: ($("ciNote").value || "").trim(),
+    });
+    msg.textContent = "";
+    closeCalibItem();
+    loadCalibration();
+    toast("已加入标定集", "ok");
+  } catch (e) { msg.textContent = e.message; }
+}
+
 /* ===================== 管理面板 ===================== */
 async function loadUsers() {
   const box = $("usersBody");
   if (!box) return;
   try {
     const r = await API.users();
-    const rows = (r.users || []).map(u => `<tr>
+    state.users = r.users || [];
+    const rows = state.users.map(u => `<tr>
       <td><b>${esc(u.username)}</b></td>
       <td>${esc(u.display_name || "—")}</td>
       <td>${esc({ admin: "管理员", hr: "招聘", viewer: "只读" }[u.role] || u.role)}</td>
       <td>${u.disabled ? '<span class="badge bad">已停用</span>' : '<span class="badge ok">正常</span>'}</td>
       <td class="muted">${esc(u.last_login || "从未登录")}</td>
-      <td><button class="btn tiny" onclick="toggleUser('${u.id}', ${u.disabled ? "false" : "true"})">
-        ${u.disabled ? "启用" : "停用"}</button></td>
+      <td>
+        <button class="btn tiny" onclick="toggleUser('${u.id}', ${u.disabled ? "false" : "true"})">
+          ${u.disabled ? "启用" : "停用"}</button>
+        <button class="btn tiny" onclick="openResetPw('${u.id}')">重置口令</button>
+      </td>
     </tr>`).join("");
     box.innerHTML = `<table class="data-table"><thead><tr>
       <th>账号</th><th>显示名</th><th>角色</th><th>状态</th><th>最后登录</th><th></th>
@@ -3327,6 +3572,41 @@ async function loadUsers() {
   } catch (e) {
     box.innerHTML = `<div class="err">加载失败：${esc(e.message)}</div>`;
   }
+}
+
+/* 重置口令：账号遗忘或怀疑失窃时，管理员直接换一个新口令。
+   用户名从 state.users 里按 id 反查后写进 textContent，不拼进
+   onclick 属性——用户输入不该进 HTML 属性上下文。 */
+function openResetPw(uid) {
+  const u = (state.users || []).find(x => x.id === uid);
+  if (!u) { toast("找不到该用户，请刷新列表", "err"); return; }
+  state.resetPwTarget = u;
+  $("rpUser").textContent = u.username + (u.display_name ? `（${u.display_name}）` : "");
+  $("rpPass").value = "";
+  $("rpHint").textContent = "";
+  const m = $("rpMeter");
+  if (m) { m.style.width = "0"; m.className = ""; }
+  $("rpMsg").textContent = "";
+  $("resetPwModal").classList.remove("hidden");
+}
+function closeResetPw() {
+  $("resetPwModal").classList.add("hidden");
+  state.resetPwTarget = null;
+}
+
+async function doResetPw() {
+  const u = state.resetPwTarget;
+  if (!u) return;
+  const pw = $("rpPass").value || "";
+  if (pw.length < 8) { $("rpMsg").textContent = "口令至少 8 位"; return; }
+  const msg = $("rpMsg");
+  msg.textContent = "提交中…";
+  try {
+    await API.resetPassword(u.id, pw);
+    msg.textContent = "";
+    closeResetPw();
+    toast(`已重置 ${u.username} 的口令`, "ok");
+  } catch (e) { msg.textContent = e.message; }
 }
 
 async function toggleUser(id, disabled) {
@@ -3477,6 +3757,7 @@ async function loadAlign() {
             ${b.rubric_version ? ` · 口径 <code>${esc(b.rubric_version)}</code>` : ""}</span>
         </div>
         <button class="btn tiny" data-align-view="${esc(b.id)}">看对照</button>
+        <button class="btn tiny danger-ghost" onclick="deleteAlignBatch('${esc(b.id)}')">删除</button>
       </div>`).join("")}</div>`;
     if (!state.alignActive) {
       loadAlignReport(batches[0].id);
@@ -3486,6 +3767,22 @@ async function loadAlign() {
   } catch (e) {
     box.innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
+}
+
+/* 删掉一个导入错的批次：整批决定都会被移除，但岗位评审不受影响。
+   删错批次的代价是重新导入，删错评审的代价是重烧一次 API。 */
+async function deleteAlignBatch(aid) {
+  if (!aid) return;
+  if (!confirm("删除这个回测批次？\n\n批次里的真实决定会被移除，已算出的对照结果不再可查；岗位内的评审记录不受影响。")) return;
+  try {
+    await API.alignDelete(aid);
+    if (state.alignActive === aid) {
+      state.alignActive = null;
+      $("alignReport").innerHTML = "";
+    }
+    toast("已删除批次", "ok");
+    loadAlign();
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
 }
 
 async function loadAlignReport(aid) {
@@ -3591,6 +3888,33 @@ function openAlignImport() {
 }
 
 function closeAlign() { $("alignModal").classList.add("hidden"); }
+
+/* 上传文件解析成文本回填：HR 手里的真实决定常常是 Excel/Word/PDF 导出，
+   "只能粘贴"会逼人手动搬运——搬错一列，命中率就算错，而且没人会发现。
+   这里用通用解析端点抽文字，回填后仍要走人工预览那一步。 */
+async function parseAlignFile(input) {
+  const f = input.files && input.files[0];
+  const msg = $("alignFileMsg");
+  if (!f) return;
+  msg.textContent = "解析中…";
+  try {
+    const [b64] = await readFilesToB64([f]);
+    const r = await API.parseDocs({
+      files: [{ filename: b64.filename, data_base64: b64.data_base64 }],
+    });
+    const first = (r.results || [])[0] || {};
+    if (first.error) throw new Error(first.error);
+    const text = (first.text || "").trim();
+    if (!text) throw new Error("没能从这个文件抽出文字（扫描版图片/PDF 暂不支持）");
+    $("alignText").value = text;
+    msg.textContent =
+      `已从「${f.name}」解析出 ${text.length} 字。请检查表头和决定列是否完好，再点「先预览」。`;
+  } catch (e) {
+    msg.textContent = "解析失败：" + e.message;
+  } finally {
+    input.value = "";   // 清空，以便同一文件改完后再选还能触发 change
+  }
+}
 
 async function previewAlign() {
   const text = $("alignText").value;

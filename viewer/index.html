@@ -451,6 +451,23 @@
                   oninput="debouncedSaveNote()"></textarea>
       </div>
       <div class="field">
+        <label>数据权利 <span class="muted">PIPL 下的查阅与删除</span></label>
+        <div class="head-actions">
+          <button class="btn small" id="btnExportPerson" onclick="exportPersonData()">导出此人全部数据</button>
+          <button class="btn small danger-ghost" id="btnErasePerson" onclick="erasePersonData()">擦除此人</button>
+        </div>
+        <div class="hint">
+          导出物含<b>明文个人信息</b>，请按内部数据管理规定保存，勿随意转发；
+          擦除会删除此人的材料、评审关联与档案，<b>不可恢复</b>。
+        </div>
+      </div>
+      <div class="field">
+        <label>删除档案 <span class="muted">从人才库移除；各岗位内的历史评审记录保留</span></label>
+        <div class="head-actions">
+          <button class="btn small danger-ghost" id="btnDeletePerson" onclick="deleteTalentPerson()">删除此人</button>
+        </div>
+      </div>
+      <div class="field">
         <label>拉进岗位复评 <span class="muted">复用已上传的材料，无需重新上传</span></label>
         <div class="head-actions">
           <select id="tdJobSel" class="talent-sel"></select>
@@ -806,6 +823,13 @@
 李四,淘汰,方向不符
 王五,待定,等用人经理确认"></textarea>
       </div>
+      <div class="field">
+        <label>或上传文件 <span class="muted">解析出的文本会回填上方文本框，之后照常预览</span></label>
+        <input id="alignFile" type="file"
+               accept=".txt,.md,.markdown,.json,.csv,.log,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif"
+               onchange="parseAlignFile(this)">
+        <div class="hint" id="alignFileMsg"></div>
+      </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeAlign()">取消</button>
         <button class="btn" onclick="previewAlign()">先预览</button>
@@ -954,6 +978,99 @@
         <button class="btn primary" onclick="doCreateUser()">创建</button>
       </div>
       <div class="auth-msg" id="nuMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 重置他人口令（管理员） ==================== -->
+<div id="resetPwModal" class="modal hidden" onclick="if(event.target===this)closeResetPw()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>重置口令</h2>
+      <button class="modal-x" onclick="closeResetPw()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">为账号 <b id="rpUser">—</b> 设置新口令。对方下次登录时使用新口令。</p>
+      <div class="field">
+        <label>新口令</label>
+        <input id="rpPass" type="password" autocomplete="new-password"
+               oninput="renderPwMeter('rpPass','rpMeter','rpHint')">
+        <div class="pw-meter"><i id="rpMeter"></i></div>
+        <div class="hint" id="rpHint"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeResetPw()">取消</button>
+        <button class="btn primary" onclick="doResetPw()">重置</button>
+      </div>
+      <div class="auth-msg" id="rpMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 编辑候选人（只改内容字段） ==================== -->
+<div id="candEditModal" class="modal hidden" onclick="if(event.target===this)closeCandEdit()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>编辑候选人</h2>
+      <button class="modal-x" onclick="closeCandEdit()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        这里只能改<b>姓名</b>——用于修正文档解析出的错字或错误姓名。
+        评审状态、评分结果、身份关系各有专用入口，不在这里改，
+        以免一条修改就绕过硬性的状态机与留痕。
+      </p>
+      <div class="field">
+        <label>姓名</label>
+        <input id="ceName" type="text" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeCandEdit()">取消</button>
+        <button class="btn primary" onclick="saveCandEdit()">保存</button>
+      </div>
+      <div class="auth-msg" id="ceMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 添加标定条目 ==================== -->
+<div id="calibItemModal" class="modal hidden" onclick="if(event.target===this)closeCalibItem()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>添加标定条目</h2>
+      <button class="modal-x" onclick="closeCalibItem()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        把<b>你已经人工定过级</b>的候选人加进标定集。系统随后会对比
+        "人给的等级"与"模型给的等级"的一致率——这是检验评分口径是否靠谱的唯一办法。
+        只列出当前岗位已有评分的候选人。
+      </p>
+      <div class="field">
+        <label>标定集</label>
+        <select id="ciSet"></select>
+      </div>
+      <div class="field">
+        <label>候选人</label>
+        <select id="ciCand"></select>
+      </div>
+      <div class="field">
+        <label>你给的等级</label>
+        <select id="ciLabel">
+          <option value="A">A（明显推荐）</option>
+          <option value="B">B（可进面试）</option>
+          <option value="C">C（不推荐）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>备注 <span class="muted">可选，记下你定级的理由</span></label>
+        <input id="ciNote" type="text" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeCalibItem()">取消</button>
+        <button class="btn primary" onclick="saveCalibItem()">加入</button>
+      </div>
+      <div class="auth-msg" id="ciMsg"></div>
     </div>
   </div>
 </div>

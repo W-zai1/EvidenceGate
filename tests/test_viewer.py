@@ -101,20 +101,23 @@ print("app.js 使用但样式未定义的类：%s" % (undef[:10] if undef else "
 # 于是"备份功能"在演示里存在、在用户手里不存在，而所有检查都是绿的。
 # 现在：api.js 里每个封装（除了明确说明"仅内部用"的）都必须被 app.js 调用。
 api_fns = set(re.findall(r"^\s{2,}(\w+):\s*(?:\(|async)", api, re.M))
-# 这些是底层/内部封装，不直接出现在界面逻辑里
-API_INTERNAL = {"jsonFetch", "post", "get", "put", "del", "enc", "qs", "setModelConfig"}
+# 这些是底层/内部封装，不直接出现在界面逻辑里。
+# health 是运维探活端点（给监控/探活用），没有界面需求——
+# 自检面板要的版本、schema、连通性信息都在 /api/selfcheck 里。
+API_INTERNAL = {"jsonFetch", "post", "get", "put", "del", "enc", "qs", "setModelConfig",
+                "health"}
 called = set(re.findall(r"\bAPI\.(\w+)\s*\(", js))
 orphan = sorted(f for f in api_fns
                 if f not in API_INTERNAL and f not in called)
 print("api.js 声明但 app.js 从未调用：%s" % (orphan if orphan else "无 ✓"))
-# 上面这些是**已知**的"后端有、界面无入口"。不是本轮引入的，但确实是缺口：
-# 接口能调、测试能过、用户点不到。列在这里而不是放宽检查，是为了让
-# 新增的死接口立刻失败，同时不掩盖既有的这些。
-KNOWN_ORPHANS = {
-    "addCalibItem", "alignDelete", "compareIdentity", "deleteOutcome",
-    "deleteTalent", "erasePerson", "exportPerson", "health",
-    "parseDocs", "resetPassword", "updateCandidate",
-}
+# 曾经的 11 个"后端有、界面无入口"已全部接线：
+#   resetPassword（用户表·重置口令）、updateCandidate（候选人·改姓名）、
+#   deleteTalent / exportPerson / erasePerson（人才抽屉·删档案/导出/擦除）、
+#   deleteOutcome（进展时间线·删单条）、addCalibItem（校准页·加条目）、
+#   alignDelete（回测·删批次）、compareIdentity（身份弹窗·手工比对）、
+#   parseDocs（回测导入·上传文件解析）；health 归入 API_INTERNAL。
+# 集合留空但保留机制：再新增死接口，这里立刻失败。
+KNOWN_ORPHANS = set()
 new_orphan = sorted(set(orphan) - KNOWN_ORPHANS)
 print("其中新增（必须修）：%s" % (new_orphan if new_orphan else "无 ✓"))
 
