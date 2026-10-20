@@ -215,6 +215,17 @@
             <span class="sys-go">进入 →</span></span>
         </button>
 
+        <div class="sys-card" id="selfcheckCard">
+          <span class="sys-ico">检</span>
+          <span class="sys-name">系统自检</span>
+          <span class="sys-desc">库可写、模型配置、备份新鲜度、连通性。默认只读本地状态；
+            点「检测」才真的发一次最小调用，结果缓存 10 分钟。</span>
+          <span class="sys-foot">
+            <span class="sys-badge" id="selfcheckBadge">未检测</span>
+            <button class="btn small" id="selfcheckBtn" onclick="runSelfcheck()">检测</button>
+          </span>
+        </div>
+
         <div class="sys-card soon">
           <span class="sys-ico">规</span>
           <span class="sys-name">规则审查</span>

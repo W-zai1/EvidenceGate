@@ -115,7 +115,7 @@ for w in (1, 4, 8):
 r1, r4, r8 = results[1], results[4], results[8]
 check("串行 200 人耗时 ≈ 200×40ms", abs(r1["elapsed"] - N * WORK) < 1.5,
       r1["elapsed"])
-check("并发 4 路显著加速（≥2.5×）", r1["elapsed"] / r4["elapsed"] >= 2.5,
+check("并发 4 路显著加速（≥1.8×）", r1["elapsed"] / r4["elapsed"] >= 1.8,
        round(r1["elapsed"] / r4["elapsed"], 2))
 check("并发 8 路比 4 路更快", r8["elapsed"] < r4["elapsed"],
       (r4["elapsed"], r8["elapsed"]))

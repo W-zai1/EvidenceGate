@@ -626,6 +626,41 @@ async function loadConsole() {
   }
 }
 
+/* ---- 系统自检：默认只读本地状态；点「检测」才真的发一次最小调用 ---- */
+async function runSelfcheck() {
+  const badge = $("selfcheckBadge");
+  const btn = $("selfcheckBtn");
+  if (badge) { badge.textContent = "检测中…"; badge.className = "sys-badge"; }
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.selfcheck(true);
+    const dbOk = !!(r.db && r.db.ok);
+    const modelOk = !!(r.provider && r.provider.configured);
+    const backupOk = !!(r.backup && !r.backup.stale);
+    const connOk = r.connectivity ? !!r.connectivity.ok : null;
+    const bad = !dbOk || !backupOk || connOk === false;
+    const mark = ok => (ok ? "✓" : "✗");
+    const detail = [
+      dbOk ? "库可写" : "库异常",
+      modelOk ? "模型已配" : "模型未配",
+      backupOk ? "备份新鲜" : "备份过期",
+    ];
+    if (connOk !== null) detail.push(connOk ? "连通正常" : "连通失败");
+    if (badge) {
+      badge.textContent = "库" + mark(dbOk) + " 模型" + mark(modelOk) +
+        " 备份" + mark(backupOk) + (connOk === null ? "" : " 连通" + mark(connOk));
+      badge.title = detail.join(" · ");
+      badge.className = "sys-badge " + (bad ? "warn" : (modelOk ? "live" : "soon"));
+    }
+    toast("自检完成：" + detail.join(" · "), bad ? "err" : "ok", 4200);
+  } catch (e) {
+    if (badge) { badge.textContent = "自检失败"; badge.className = "sys-badge bad"; }
+    toast("自检失败：" + e.message, "err");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function bootLanding() {
   return loadProfiles().then(() => {
     let sys = "";

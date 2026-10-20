@@ -242,6 +242,8 @@ html[data-theme="dark"] .portal-mark .ic-star{fill:#ffd97a}
 .sys-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid}
 .sys-badge.live{color:var(--ev-ok);background:var(--ev-ok-bg);border-color:var(--ev-ok-line)}
 .sys-badge.soon{color:var(--ev-idle);background:var(--ev-idle-bg);border-color:var(--ev-idle-line)}
+.sys-badge.warn{color:var(--ev-warn);background:var(--ev-warn-bg);border-color:var(--ev-warn-line)}
+.sys-badge.bad{color:var(--ev-bad);background:var(--ev-bad-bg);border-color:var(--ev-bad-line)}
 .sys-go{font-size:11px;font-weight:650;color:var(--accent,#2a55c4)}
 .portal-foot{margin-top:30px;text-align:center;font-size:10.5px;color:var(--faint,var(--muted))}
 

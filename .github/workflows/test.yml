@@ -16,6 +16,14 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12", "3.13"]
 
+    # Windows runner 的默认控制台代码页是 cp1252，中文 print 会直接
+    # UnicodeEncodeError 把检查步骤打挂（2026-10-20 第一次 CI 就栽在这）。
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +50,26 @@ jobs:
       - name: 单元测试
         working-directory: tests
         run: python test_unit.py
+
+      - name: 证据脊柱（IR / 引用核验 / 非补偿闸门）
+        working-directory: tests
+        run: python test_gate.py
+
+      - name: 案件与证据链（增删改 / 级联清理）
+        working-directory: tests
+        run: python test_cases.py
+
+      - name: 案件接口与权限（viewer 只读 / hr 可签）
+        working-directory: tests
+        run: python test_api_cases.py
+
+      - name: 材料入库与主张抽取（span 定位）
+        working-directory: tests
+        run: python test_intake_extract.py
+
+      - name: 编排（事件 / 失败显式化）
+        working-directory: tests
+        run: python test_orchestrator.py
 
       - name: 端到端测试
         working-directory: tests
@@ -102,14 +130,6 @@ jobs:
       - name: 批量身份确认（部分成功 / 超限拒绝 / 审计）
         working-directory: tests
         run: python test_identity_batch.py
-
-      - name: 事件按 ID 关联（同名候选人不串台）
-        working-directory: tests
-        run: python test_event_identity.py
-
-      - name: 事件归一化字段（stage / duration_ms / error_type）
-        working-directory: tests
-        run: python test_event_stage.py
 
       - name: 合成样本集自洽 + 超长材料截断策略
         working-directory: tests

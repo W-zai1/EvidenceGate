@@ -273,6 +273,7 @@
     rubric: () => jsonFetch('/api/rubric'),
 
     /* ---- 启动自检（probe=1 才会真探测，结果服务端缓存 10 分钟） ---- */
+    selfcheck: (probe) => jsonFetch('/api/selfcheck' + (probe ? '?probe=1' : '')),
 
     /* ---- 批量确认身份（只支持"不是同一人"） ---- */
     batchIdentity: (items) => post('/api/identity/batch-confirm', { items: items }),
