@@ -1,5 +1,7 @@
 # EvidenceGate · 证据裁定台
 
+[![test](https://github.com/W-zai1/EvidenceGate/actions/workflows/test.yml/badge.svg)](https://github.com/W-zai1/EvidenceGate/actions/workflows/test.yml)
+
 > **这个仓库现在有两个入口，共用同一套证据脊柱：**
 >
 > - **EvidenceGate（默认入口）**：案件 → 材料 → 主张 → 引用核验 → 非补偿闸门 → 三级复核 → 证据包。
