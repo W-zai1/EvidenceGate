@@ -236,6 +236,24 @@ http_base.serve_static(h, VIEWER, "/app.py")
 check("非白名单后缀不放行", h.status == 404, h.status)
 
 
+# =============================================== 上传落盘路径
+sec("上传落盘：DATA_DIR 与项目根不同盘时不能炸")
+if sys.platform == "win32":
+    # CI 的 Windows runner 上仓库在 D:、tempfile 在 C:，正是这个组合。
+    from engine.storage import store
+    _old_root = db.PROJECT_ROOT
+    db.PROJECT_ROOT = "Q:\\evidencegate-other-drive"
+    try:
+        rel, base = store.save_upload("job_xdrive", "cand_x1", "简历.txt", b"hi")
+        check("跨盘上传不抛异常，且记的是相对路径", not os.path.isabs(rel), rel)
+        check("跨盘上传的路径仍能按 DATA_DIR 定位",
+              os.path.exists(os.path.join(db.DATA_DIR, rel)), rel)
+    finally:
+        db.PROJECT_ROOT = _old_root
+else:
+    print("   （Windows 专属用例，本平台跳过）")
+
+
 # =============================================== 结果
 print("\n" + "=" * 58)
 print(" 通过 %d 项，失败 %d 项" % (len(PASS), len(FAIL)))

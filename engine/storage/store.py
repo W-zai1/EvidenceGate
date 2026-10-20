@@ -703,8 +703,14 @@ def save_upload(job_id, cand_id, filename, data):
         target = os.path.join(d, "%s_%s%s" % (stem, secrets.token_hex(4), ext))
     with open(target, "wb") as f:
         f.write(data)
-    rel = os.path.relpath(target, db.PROJECT_ROOT).replace("\\", "/")
-    return rel, os.path.basename(target)
+    try:
+        rel = os.path.relpath(target, db.PROJECT_ROOT)
+    except ValueError:
+        # Windows 上 DATA_DIR 与项目根可能不在同一个盘：CI 里仓库在 D:、
+        # tempfile 在 C:，relpath 会直接抛 "path is on mount 'C:', start on mount 'D:'"。
+        # 退回相对 DATA_DIR——读文件的地方本来就只认 DATA_DIR/jobs/...
+        rel = os.path.relpath(target, db.DATA_DIR)
+    return rel.replace("\\", "/"), os.path.basename(target)
 
 
 # ---------------------------------------------------------------------------
