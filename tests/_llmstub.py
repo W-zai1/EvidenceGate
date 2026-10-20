@@ -21,7 +21,7 @@ _ENGINE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if _ENGINE not in sys.path:
     sys.path.insert(0, _ENGINE)
 
-import llm_client
+from engine.api import llm_client
 
 
 def install(fake_raw):

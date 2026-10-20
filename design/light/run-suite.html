@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EvidenceGate · 证据链校验</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  /* 本页专属：运行卡内的「表格 + 证据栏」双列 */
+  .runcard{padding:18px 20px 0}
+  .run-grid{display:grid;grid-template-columns:minmax(0,1fr) 318px;gap:0;margin:16px -20px 0;border-top:1px solid var(--line)}
+  .run-grid .left{padding:0 0 6px}
+  .run-grid .left .thead{
+    display:flex;align-items:center;gap:10px;padding:11px 20px 8px;
+  }
+  .run-grid .left .thead h3{font-size:12px;font-weight:650}
+  .run-grid .left .thead .hint{font-size:11px;color:var(--faint);margin-left:auto}
+  .run-aside{border-left:1px solid var(--line);padding:14px 18px 18px;background:var(--surface-2)}
+  .run-aside h3{font-size:12px;font-weight:650;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .run-aside h3 .badge{font-size:9.5px;font-weight:700;color:var(--muted);background:var(--surface-3);border-radius:4px;padding:1px 5px;letter-spacing:.04em}
+  .claimlead{font-size:12.5px;color:var(--ink-2);padding-bottom:4px}
+  .cmt{font-size:11px;color:var(--faint);margin-top:9px}
+  .asidecard .card-body{padding:14px 18px}
+  .divider{height:1px;background:var(--line);margin:12px 0}
+</style>
+</head>
+<body>
+
+<!-- ======================= 顶栏 ======================= -->
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>
+        </svg>
+      </span>
+      <span>
+        <span class="name">Evidence<em>Gate</em></span>
+        <span class="sub">证据裁定台</span>
+      </span>
+    </div>
+
+    <nav class="crumbs" aria-label="面包屑">
+      <span>案件</span><span class="sep">/</span>
+      <span>AP-2025-0412 · 供应商对账</span><span class="sep">/</span>
+      <span>运行</span><span class="sep">/</span>
+      <span class="cur">证据链校验</span>
+    </nav>
+
+    <span class="spacer"></span>
+
+    <div class="right">
+      <button class="chip tap" title="切换场景档（profile）">
+        <span class="dot" style="background:var(--accent)"></span>场景 · 财务审计
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span class="chip soft mono">ENV · DEV</span>
+      <span class="chip ok"><span class="dot"></span>上次运行 通过</span>
+      <span class="avatar">王</span>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- ======================= 页头 ======================= -->
+  <div class="pagehead">
+    <div class="t">
+      <h1>证据链校验</h1>
+      <p>端到端跑一遍「取数 → 引用核验 → 裁定 → 留痕」，确认这条链在本案件上没有断点。校验通过只代表链条完整，不代表结论可以出具。</p>
+      <p class="muted" style="margin-top:4px;font-size:11.5px">
+        当前载入 <span class="mono">profile: audit.tw@2025.11.3</span> · 同一套脊柱，换档只换标准与维度
+      </p>
+    </div>
+    <div class="acts">
+      <button class="btn">仅重跑失败项</button>
+      <button class="btn primary">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        运行全套校验
+      </button>
+    </div>
+  </div>
+
+  <div class="workspace">
+
+    <!-- ======================= 左：运行卡 ======================= -->
+    <section class="stack">
+      <div class="card runcard">
+
+        <div class="controls">
+          <div class="field">
+            <label>数据集</label>
+            <div class="control select">
+              <span class="mono" style="font-size:12px">ap-recon-2025Q4</span>
+              <span class="muted" style="font-size:11px">12 份材料</span>
+              <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label>执行模式</label>
+            <div class="seg" role="tablist">
+              <button class="on" role="tab" aria-selected="true">确定性优先</button>
+              <button role="tab">分段执行</button>
+            </div>
+          </div>
+          <div class="field" style="margin-left:auto">
+            <label>本次运行</label>
+            <div class="control" style="border-color:var(--line);background:var(--surface-2)">
+              <span class="mono" style="font-size:11.5px;color:var(--muted)">run-9f3c2a</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tags">
+          <span class="tag"><span class="dot"></span>锚点已定位 <b>12</b> 份</span>
+          <span class="tag"><span class="dot"></span>来源 <b>4</b> 类</span>
+          <span class="tag"><span class="dot"></span>引用逐字回链</span>
+          <span class="tag"><span class="dot"></span>独立复算</span>
+          <span class="tag"><span class="dot"></span>闸门 <b>G-03</b></span>
+        </div>
+
+        <!-- 运行摘要 -->
+        <div class="summary">
+          <div class="verdict ok">
+            <span class="glyph">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+            <span>
+              <span class="word">通过</span>
+              <span class="note">8/8 校验完成 · 链条无断点</span>
+            </span>
+          </div>
+          <div class="stat"><div class="k">校验</div><div class="v">8 / 8</div></div>
+          <div class="stat"><div class="k">耗时</div><div class="v mono">00:42</div></div>
+          <div class="stat"><div class="k">开始</div><div class="v mono" style="font-size:12px">2025-12-12 22:41</div></div>
+          <div class="stat"><div class="k">数据指纹</div><div class="v mono" style="font-size:12px">3b3c1…9a2f</div></div>
+          <button class="btn" style="justify-self:end">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+            下载证据包
+          </button>
+        </div>
+
+        <!-- 表格 + 证据栏 -->
+        <div class="run-grid">
+          <div class="left">
+            <div class="thead">
+              <h3>校验项</h3>
+              <span class="hint">8 项确定性检查 · 无 LLM 参与判定</span>
+            </div>
+            <div class="tablewrap">
+              <table class="checks">
+                <thead>
+                  <tr><th>ID</th><th>校验</th><th>状态</th><th style="text-align:right">耗时</th><th>证据</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="id">EV-001</td><td class="nm">证据存在性</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">120ms</td>
+                    <td class="ev">8 条主张 → 12 份源文件均可解析</td>
+                  </tr>
+                  <tr>
+                    <td class="id">CL-001</td><td class="nm">引用逐字回链</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">1.8s</td>
+                    <td class="ev">6/6 命中原文 · <span class="mono">quote_stripped=1</span>（已降级标注）</td>
+                  </tr>
+                  <tr>
+                    <td class="id">CL-002</td><td class="nm">跨材料引用一致性</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">240ms</td>
+                    <td class="ev">冲突 0 · 同一金额 3 处一致</td>
+                  </tr>
+                  <tr>
+                    <td class="id">AR-001</td><td class="nm">算术独立复算</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">2.1s</td>
+                    <td class="ev">发票 × 3 复算一致 · 差额 <span class="mono">0.00</span></td>
+                  </tr>
+                  <tr>
+                    <td class="id">XR-001</td><td class="nm">账证交叉核对</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">4.2s</td>
+                    <td class="ev">12 笔流水 ↔ 明细账 · 0 差额</td>
+                  </tr>
+                  <tr>
+                    <td class="id">AU-001</td><td class="nm">职责分离</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">90ms</td>
+                    <td class="ev">录入 3 人 / 复核 3 人 · 无同一人</td>
+                  </tr>
+                  <tr>
+                    <td class="id">DF-001</td><td class="nm">专业判断挂起</td>
+                    <td><span class="st warn"><span class="ico">!</span>需人工</span></td>
+                    <td class="du">150ms</td>
+                    <td class="ev">2 条准则适用性未决 → <span class="mono">DEFER</span></td>
+                  </tr>
+                  <tr>
+                    <td class="id">TR-001</td><td class="nm">留痕完整性</td>
+                    <td><span class="st ok"><span class="ico">✓</span>通过</span></td>
+                    <td class="du">320ms</td>
+                    <td class="ev">哈希链 <span class="mono">1..418</span> 连续 · 链头未外部锚定</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 证据栏 -->
+          <aside class="run-aside">
+            <h3>证据 <span class="badge">DRILL-DOWN</span></h3>
+            <dl class="kv">
+              <dt>追踪 ID</dt><dd class="mono">7c20…c41</dd>
+              <dt>工作流 ID</dt><dd class="mono">wf-ap0412-082</dd>
+              <dt>案件</dt><dd class="mono">AP-2025-0412</dd>
+              <dt>运行</dt><dd class="mono">run-9f3c2a</dd>
+              <dt>口径</dt><dd class="mono">audit.tw@2025.11.3</dd>
+            </dl>
+            <div class="links">
+              <a href="#">工作流历史 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M9 7h8v8"/></svg></a>
+              <a href="#">打开 Trace <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M9 7h8v8"/></svg></a>
+            </div>
+
+            <div class="pkg">
+              <div class="t"><span>证据包</span><span class="mono" style="font-size:10px">4 件</span></div>
+              <ul>
+                <li><span class="mono">manifest.json</span><span class="badge ok">已生成</span></li>
+                <li><span class="mono">claims.jsonl</span><span class="badge ok">已生成</span></li>
+                <li><span class="mono">spans/ · 12</span><span class="badge ok">已生成</span></li>
+                <li><span class="mono">verify.py</span><span class="badge">待生成</span></li>
+              </ul>
+              <p class="cmt">证据包自带离线校验脚本：对方不需要信任本系统，只需跑一遍脚本。</p>
+            </div>
+
+            <div class="divider"></div>
+            <button class="btn sm" style="width:100%;justify-content:center">复制摘要（含指纹）</button>
+          </aside>
+        </div>
+      </div>
+
+      <!-- ======================= 裁定摘要 ======================= -->
+      <div class="card">
+        <div class="card-head">
+          <h2>裁定摘要 · 每条结论回到原文</h2>
+          <span class="hint">9 条实质主张 → 8 条可回链，1 条剔除</span>
+        </div>
+        <div class="card-body">
+          <p class="claimlead">本页只列需要人判断的部分。可回链的主张可点开来源并高亮对应句；被剔除的主张保留编号，不静默消失。</p>
+
+          <div class="claim">
+            <span class="num">1</span>
+            <div>
+              <div class="txt">11 月 3 日入库单金额 42,800.00 元，与发票、明细账三方一致。</div>
+              <div class="meta">
+                <span class="cite">↗ 入库单 P.12</span>
+                <span class="cite">↗ 发票 INV-88213</span>
+                <span class="cite">↗ 明细账 R-331</span>
+                <span>3 源交叉 · 逐字命中</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="claim">
+            <span class="num">2</span>
+            <div>
+              <div class="txt">供应商资质在有效期内（证书号 QX-2024-0877，有效期至 2026-05-31）。</div>
+              <div class="meta">
+                <span class="cite">↗ 资质证书 P.3</span>
+                <span>有效期由复算得出，非模型口述</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="claim">
+            <span class="num">3</span>
+            <div>
+              <div class="txt">该笔付款的审批链完整（4 级审批，末级 2025-11-04 完成）。</div>
+              <div class="meta">
+                <span class="cite">↗ 审批流 A-77</span>
+                <span class="why info">审批人不在四眼名单 → 见 DF-001</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="claim stripped">
+            <span class="num">4</span>
+            <div>
+              <div class="txt">供应商为集团关联方，存在利益输送风险。</div>
+              <div class="meta">
+                <span class="why">无原文支撑 · 已剔除</span>
+                <span>模型推断；12 份材料中无对应表述</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="legend">
+            <span>✓ 可回链 = 原文可定位到句</span>
+            <span>⌫ 已剔除 = 保留编号与原因，不进入裁定</span>
+            <span>⏸ DEFER = 系统不代替专业判断</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 校验通过 ≠ 可出具 -->
+      <div class="banner warn">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <div>
+          <b>校验通过 ≠ 可以出具。</b>本次运行证明「链条没断」，但闸门 <b>G-03</b> 仍阻断：缺 1 份关联方声明、2 项专业判断挂起、复核人尚未指派。
+          <a href="gate.html" style="font-weight:700">查看闸门裁定 →</a>
+        </div>
+      </div>
+
+      <div class="footnote">
+        <span class="mono">profile audit.tw@2025.11.3</span>
+        <span class="mono">rubric 8f2c…4d</span>
+        <span>运行 <span class="mono">run-9f3c2a</span></span>
+        <span>生成于 2025-12-12 22:42</span>
+        <span class="faint">原型示例数据，非真实案件</span>
+      </div>
+    </section>
+
+    <!-- ======================= 右：侧栏 ======================= -->
+    <aside class="stack">
+
+      <div class="card asidecard">
+        <div class="card-head" style="padding:12px 18px">
+          <h2>建议下一步</h2>
+        </div>
+        <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+          <div class="acts-list">
+            <a class="act" href="#">
+              <span><span class="t">补齐关联方声明</span><span class="s">阻断 G3.1 · 缺 1 份源文件</span></span>
+              <span class="arr">→</span>
+            </a>
+            <a class="act" href="#">
+              <span><span class="t">指派独立复核人</span><span class="s">阻断 G3.3 · 编制与复核须分离</span></span>
+              <span class="arr">→</span>
+            </a>
+            <a class="act" href="#">
+              <span><span class="t">导出可复核证据包</span><span class="s">含 verify.py · 供第三方独立验证</span></span>
+              <span class="arr">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card asidecard">
+        <div class="card-head" style="padding:12px 18px">
+          <h2>本次覆盖范围</h2>
+          <span class="hint">诚实边界</span>
+        </div>
+        <div class="card-body">
+          <dl class="kv" style="grid-template-columns:96px 1fr">
+            <dt>材料</dt><dd style="text-align:left;font-weight:500">5 类 · 12 份</dd>
+            <dt>未覆盖</dt><dd style="text-align:left;font-weight:500;color:var(--warn)">合同附件 · 银行回单原件</dd>
+            <dt>不做</dt><dd style="text-align:left;font-weight:500">准则适用性判断（挂起）</dd>
+          </dl>
+          <p class="cmt">含入库单、发票、明细账、资质证书与审批流。未覆盖 ≠ 通过：缺失材料在闸门里按「未闭合」计，不按「无问题」计。</p>
+        </div>
+      </div>
+
+      <div class="card asidecard">
+        <div class="card-head" style="padding:12px 18px">
+          <h2>留痕</h2>
+          <span class="hint">append-only</span>
+        </div>
+        <div class="card-body">
+          <dl class="kv">
+            <dt>链长度</dt><dd class="mono">418 条</dd>
+            <dt>链头</dt><dd class="mono">7c20…c41</dd>
+            <dt>锚定</dt><dd style="color:var(--warn)">未外部锚定</dd>
+          </dl>
+          <p class="cmt">本地哈希链只能证明「库内未被改动」。要让第三方相信，需每日把链头签名后交外部时间戳（P1）。对客户不要说「不可篡改」。</p>
+          <div class="links"><a href="#">校验链完整性</a><a href="#">导出审计日志</a></div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+</main>
+</body>
+</html>

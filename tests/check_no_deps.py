@@ -4,7 +4,7 @@
 但它很容易在某次提交里悄悄破功（"就加个 requests 吧"），
 所以用 AST 扫一遍，把第三方 import 变成硬失败。
 
-engine/ 内部模块互相以平铺模块名导入（import db / from audit import ...），
+engine/ 内部模块互相以平铺模块名导入（import db / from engine.guardrails.audit import ...），
 所以本地模块名必须算白名单，否则会把所有同目录导入误报成第三方依赖。
 """
 import ast

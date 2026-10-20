@@ -10,18 +10,18 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
 os.environ["PORT"] = "8293"
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "e2e_align.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
-import llm_client
+from engine.api import llm_client
 import _llmstub
 
 FAIL = []
@@ -53,7 +53,7 @@ def fake_raw(messages, model, api_key, base_url, temperature, use_json, timeout)
 
 
 _llmstub.install(fake_raw)
-import server as srvmod
+from engine.api import server as srvmod
 srv = srvmod._make_server()
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = "http://127.0.0.1:8293"

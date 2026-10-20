@@ -8,6 +8,7 @@
 /* ===================== 状态 ===================== */
 const state = {
   jobs: [],
+  system: null,         // null = 控制台；"talent" = 人才筛选分系统
   job: null,            // 当前岗位
   candidates: [],       // 当前岗位的候选人
   editingJobId: null,   // null = 新建
@@ -57,7 +58,10 @@ function can(action) {
 
 /* ===================== 启动 ===================== */
 document.addEventListener("DOMContentLoaded", async () => {
-  bootStarfield();
+  applyThemeChrome();
+  if (isDarkTheme()) bootStarfield();
+  // 兜底：任何异常都不该把用户永久关在加载层里。
+  setTimeout(() => hideBoot(true), 5000);
   initLiveFeedFollow();
   initLiveBox();
 
@@ -67,8 +71,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const ok = await bootAuth();
   if (!ok) return;
 
-  bootIntro();
+  // 入场动画是深色星空的产物：浅色模式下没有星空可"划亮"，跳过即可，
+  // 否则会先黑屏 1.8 秒再切白，比没有动画更糟。
+  if (isDarkTheme()) bootIntro(); else skipIntro();
+
   loadJobs();
+  // 默认落点是「控制台」：先选分系统，而不是一上来就进某个业务页。
+  bootLanding().then(() => hideBoot());
   refreshPendingIdentity();
 });
 
@@ -100,6 +109,8 @@ async function bootAuth() {
 }
 
 function showAuthGate(isSetup) {
+  // 登录页马上要出现，启动层没有存在意义；立刻撤掉，别盖住登录框。
+  hideBoot(true);
   const gate = $("authGate");
   if (!gate) return;
   gate.classList.remove("hidden");
@@ -154,20 +165,22 @@ async function doSetup() {
   if (p.length < 8) { msg.textContent = "口令至少 8 位"; return; }
   if (p !== p2) { msg.textContent = "两次输入的口令不一致"; return; }
 
-  btn.disabled = true; msg.textContent = "创建中…";
+  busy(btn, true, "创建中…");
+  msg.textContent = "";
   try {
     await API.setup({ username: u, password: p, display_name: ($("setupName").value || "").trim() });
     msg.textContent = "";
     await refreshMe();
     hideAuthGate();
-    bootIntro();
+    if (isDarkTheme()) bootIntro(); else skipIntro();
     loadJobs();
+    bootLanding();
     refreshPendingIdentity();
     toast("管理员已创建，欢迎使用", "ok");
   } catch (e) {
     msg.textContent = e.message;
   } finally {
-    btn.disabled = false;
+    busy(btn, false);
   }
 }
 
@@ -176,20 +189,22 @@ async function doLogin() {
   const u = ($("loginUser").value || "").trim();
   const p = $("loginPass").value || "";
   if (!u || !p) { msg.textContent = "请填写账号和口令"; return; }
-  btn.disabled = true; msg.textContent = "登录中…";
+  busy(btn, true, "登录中…");
+  msg.textContent = "";
   try {
     await API.login(u, p);
     msg.textContent = "";
     $("loginPass").value = "";
     await refreshMe();
     hideAuthGate();
-    bootIntro();
+    if (isDarkTheme()) bootIntro(); else skipIntro();
     loadJobs();
+    bootLanding();
     refreshPendingIdentity();
   } catch (e) {
     msg.textContent = e.message;
   } finally {
-    btn.disabled = false;
+    busy(btn, false);
   }
 }
 
@@ -216,8 +231,6 @@ async function afterLogin() {
   await refreshMe();
   hideAuthGate();
   renderModelBadge();
-  // 进主界面就先自检一次（不联网，只读本地状态）
-  loadSelfcheck(false);
 }
 
 async function doLogout() {
@@ -338,6 +351,108 @@ async function renderModelBadge() {
   if (badge) badge.classList.toggle("warn", !model);
 }
 
+/* ---------------- 登录后自动接通模型 ----------------
+   目标：不让用户一进来就撞上"未配置模型"。
+   顺序：已配置的模型实测 → WorkBuddy 通道（优先免费模型）→ 提示去设置。
+   同一模型 10 分钟内复用验证结果，避免每刷一次页面就打一次真实调用。 */
+const MODEL_OK_KEY = "eg.model.verified";
+let modelCheckStarted = false;
+
+function modelLabel(provider, model) {
+  return (PROVIDER_LABEL[provider] || provider || "模型") + " · " + (model || "未选模型");
+}
+
+function markModelVerified(provider, model) {
+  try {
+    sessionStorage.setItem(MODEL_OK_KEY, JSON.stringify({
+      key: provider + "|" + model, at: Date.now(),
+    }));
+  } catch (e) { /* 隐私模式忽略 */ }
+}
+
+function modelVerifiedRecently(provider, model) {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(MODEL_OK_KEY) || "null");
+    return !!(c && c.key === (provider + "|" + model) &&
+      Date.now() - c.at < 10 * 60 * 1000);
+  } catch (e) { return false; }
+}
+
+async function probeModel(provider, model, baseUrl) {
+  try {
+    const r = await API.probe({
+      action: "test", provider: provider || "", base_url: baseUrl || "",
+      api_key: "", model: model || "", use_saved_key: true,
+    });
+    return !!(r && r.ok && r.result && r.result.ok);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function saveModelChoice(provider, model, baseUrl) {
+  try {
+    await API.setModelConfig({ provider: provider, model: model, base_url: baseUrl || "" });
+  } catch (e) { /* 只读角色会在入口处被拦掉 */ }
+  try {
+    localStorage.setItem("talent_screen.model_cfg", JSON.stringify({
+      provider: provider, base_url: baseUrl || "", model: model,
+    }));
+  } catch (e) { /* 忽略 */ }
+  renderModelBadge();
+}
+
+async function ensureModelReady() {
+  if (modelCheckStarted) return;
+  // 只有能写设置的角色才做自动配置（只读角色没有 settings.write）
+  if (typeof can === "function" && !can("settings.write")) return;
+  modelCheckStarted = true;
+
+  let cfg = {};
+  try {
+    const r = await API.modelConfig();
+    cfg = (r && r.config) || {};
+  } catch (e) {
+    return;   // 后端没起来：不在这里制造噪音
+  }
+
+  if (cfg.model && modelVerifiedRecently(cfg.provider, cfg.model)) {
+    toast("模型已就绪：" + modelLabel(cfg.provider, cfg.model), "ok", 2800);
+    return;
+  }
+
+  // 1) 已配置的模型实测一次
+  if (cfg.model && await probeModel(cfg.provider, cfg.model, cfg.base_url)) {
+    markModelVerified(cfg.provider, cfg.model);
+    toast("模型已连接：" + modelLabel(cfg.provider, cfg.model), "ok", 3800);
+    return;
+  }
+
+  // 2) WorkBuddy 本机通道：优先免费模型，其次默认/auto
+  let wb = null;
+  try { wb = await API.workbuddy(); } catch (e) { wb = null; }
+  if (wb && wb.ok && wb.status && wb.status.ok) {
+    const list = wb.models || [];
+    const order = [];
+    if (cfg.model) order.push(cfg.model);
+    list.filter(m => m && m.free).forEach(m => order.push(m.id));
+    order.push("deepseek-v4-pro", "auto");
+    list.forEach(m => order.push(m && m.id));
+    const uniq = [...new Set(order.filter(Boolean))].slice(0, 5);
+
+    for (const mid of uniq) {
+      if (await probeModel("workbuddy", mid, "")) {
+        await saveModelChoice("workbuddy", mid, "");
+        markModelVerified("workbuddy", mid);
+        toast("已自动连接模型：" + modelLabel("workbuddy", mid), "ok", 4200);
+        return;
+      }
+    }
+  }
+
+  toast("未检测到可用模型，请在右上角「模型设置」里配置", "err", 5200);
+}
+
 /* ===================== 一、岗位列表 ===================== */
 const JOB_STATUS_TEXT = {
   draft: "草稿", collecting: "收集素材中", screening: "评审中", done: "已完成",
@@ -419,39 +534,107 @@ async function openJob(id) {
 function goHome() {
   if (state.running && !confirm("评审正在进行。离开页面不会中断评审（后台会继续跑），确定返回？")) return;
   state.job = null;
-  $("viewJob").classList.add("hidden");
-  $("viewHome").classList.remove("hidden");
+  state.system = "talent";
   loadJobs();
-  window.scrollTo(0, 0);
+  switchView("jobs");
 }
 
 /* ===================== 视图切换 ===================== */
+const VIEW_BY_KEY = {
+  console: "viewConsole",
+  cases: "viewCases", jobs: "viewHome", job: "viewJob", talent: "viewTalent",
+  evidence: "viewEvidence", analytics: "viewAnalytics", admin: "viewAdmin",
+};
+const NAV_BY_KEY = {
+  console: "navConsole", cases: "navCases", evidence: "navEvidence",
+  admin: "navAdmin",
+};
+// 这三个页面属于「人才筛选分系统」，不进顶层导航。
+const TALENT_VIEWS = { jobs: 1, talent: 1, analytics: 1, job: 1 };
+
 function switchView(which) {
-  const isTalent = which === "talent";
-  const isAnalytics = which === "analytics";
-  const isAdmin = which === "admin";
+  const key = which === "job" ? "job" : (VIEW_BY_KEY[which] ? which : "console");
+  if (TALENT_VIEWS[key]) state.system = "talent";
+  else state.system = null;
 
-  $("viewTalent").classList.toggle("hidden", !isTalent);
-  $("viewAnalytics").classList.toggle("hidden", !isAnalytics);
-  $("viewAdmin").classList.toggle("hidden", !isAdmin);
-  // 岗位视图的显示与否由「是否打开了某个岗位」决定
-  if (isAnalytics || isAdmin) {
-    $("viewHome").classList.add("hidden");
-    $("viewJob").classList.add("hidden");
-  } else {
-    $("viewHome").classList.toggle("hidden", isTalent || !!state.job);
-    $("viewJob").classList.toggle("hidden", isTalent || !state.job);
+  Object.keys(VIEW_BY_KEY).forEach(k => {
+    const el = $(VIEW_BY_KEY[k]);
+    if (!el) return;
+    // 岗位详情页不参与"按 key 显示"：它由 openJob/fetch 决定
+    if (k === "job") { el.classList.add("hidden"); return; }
+    el.classList.toggle("hidden", k !== key);
+  });
+
+  document.querySelectorAll(".navbtn").forEach(b => b.classList.remove("on"));
+  const navKey = key === "job" ? "jobs" : key;
+  const nb = $(NAV_BY_KEY[navKey]);
+  if (nb) nb.classList.add("on");
+
+  // 子系统壳：只有人才筛选需要它
+  const bar = $("sysBar");
+  if (bar) bar.classList.toggle("hidden", !TALENT_VIEWS[key]);
+  // 从 ?sys=talent 新窗口进来后，一旦回到顶层就把参数洗掉，
+  // 否则刷新会莫名其妙又回到子系统。
+  if (!TALENT_VIEWS[key] && location.search) {
+    try { history.replaceState(null, "", location.pathname); } catch (e) {}
   }
+  const tabMap = { jobs: "sysTabJobs", job: "sysTabJobs", talent: "sysTabTalent",
+                   analytics: "sysTabAnalytics" };
+  Object.keys(tabMap).forEach(k => {
+    const t = $(tabMap[k]);
+    if (t) t.classList.toggle("on", k === key);
+  });
 
-  $("navJobs").classList.toggle("on", !isTalent && !isAnalytics && !isAdmin);
-  $("navTalent").classList.toggle("on", isTalent);
-  const an = $("navAnalytics"); if (an) an.classList.toggle("on", isAnalytics);
-  const ad = $("navAdmin"); if (ad) ad.classList.toggle("on", isAdmin);
-
-  if (isTalent) loadTalent();
-  if (isAnalytics) { loadHitRate(); loadDrift(); loadCalibration(); loadUsage(); }
-  if (isAdmin) { loadUsers(); loadPrivacy(); loadAudit(); }
+  if (key === "console") loadConsole();
+  if (key === "talent") loadTalent();
+  if (key === "analytics") { loadHitRate(); loadDrift(); loadCalibration(); loadUsage(); }
+  if (key === "admin") { loadUsers(); loadPrivacy(); loadAudit(); }
+  if (key === "cases") loadCases();
+  if (key === "evidence") loadEvidence(false);
   window.scrollTo(0, 0);
+}
+
+/* ---------------- 分系统入口 ---------------- */
+function enterTalent(openNewWindow) {
+  if (openNewWindow) {
+    // 真的开一个新窗口：带上 ?sys=talent，落地直接进入子系统而不是控制台。
+    const w = window.open("index.html?sys=talent", "_blank");
+    if (w) { try { w.opener = null; } catch (e) {} }
+    else toast("浏览器拦截了新窗口；已在当前页进入", "info");
+    if (w) return;
+  }
+  state.system = "talent";
+  switchView("jobs");
+}
+
+function leaveTalent() {
+  state.system = null;
+  switchView("console");
+}
+
+async function loadConsole() {
+  const foot = $("portalFoot");
+  if (!foot) return;
+  try {
+    const [c] = await Promise.all([API.cases()]);
+    const n = (c.cases || []).length;
+    const profiles = (state.profiles || []).length;
+    foot.textContent = "本地库 · " + n + " 个案件 · " + profiles +
+      " 个场景 · 留痕可核验（链头未外部锚定）";
+  } catch (e) {
+    foot.textContent = "本地库 · 证据链接口暂不可用";
+  }
+}
+
+function bootLanding() {
+  return loadProfiles().then(() => {
+    let sys = "";
+    try { sys = new URLSearchParams(location.search).get("sys") || ""; } catch (e) {}
+    if (sys === "talent") enterTalent(false);
+    else switchView("console");
+    // 不阻塞界面：落地后再后台确认模型，接通了用 toast 提示。
+    ensureModelReady();
+  });
 }
 
 /* ===================== 人才库（跨岗位） ===================== */
@@ -483,7 +666,7 @@ async function loadTalent() {
       TALENT_STATUSES.map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
   }
   const grid = $("talentGrid");
-  grid.innerHTML = `<div class="hint">加载中…</div>`;
+  grid.innerHTML = loadingHTML("正在读取人才库…");
   try {
     const r = await API.talent({
       q: ($("talentSearch") || {}).value || "",
@@ -525,7 +708,7 @@ function renderTalentGrid() {
       ? `<span class="t-score ${GRADE_CLS[b.grade] || ""}">${b.total}<em>${b.grade}</em></span>`
       : `<span class="t-score none">未评</span>`;
     const tags = (p.tags || []).slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join("");
-    const jobs = (p.jobs || []).map(j => `<span class="t-job">${esc(j)}</span>`).join("");
+    const jobs = (p.jobs || []).map(j => `<span class="t-job">${esc(j.title || j.job_title || j.id || "")}</span>`).join("");
     return `<div class="talent-card" onclick="openTalent('${p.id}')">
       <div class="t-top"><span class="t-name">${esc(p.name)}</span>${score}</div>
       <div class="t-meta">
@@ -1106,8 +1289,17 @@ function uncertaintyHtml(res) {
   }
   const cb = res.audit && res.audit.context_budget;
   if (res.audit && res.audit.context_truncated && cb) {
+    // 区分两件事，否则用户会以为"整份材料都没读到"：
+    //   truncated_sections  = 材料内部被截（头尾保留了，中间省略）
+    //   dropped_sections    = 整段没装进去
+    const iCut = cb.truncated_sections || [];
+    const iDrop = cb.dropped_sections || [];
+    const detail = [
+      iCut.length ? `${esc(iCut.join("、"))} 保留了头尾、省略中段` : "",
+      iDrop.length ? `${esc(iDrop.join("、"))} 完全没有装入` : "",
+    ].filter(Boolean).join("；");
     bits.push(`<span class="unc-warn">材料超长已截断（约 ${esc(cb.original_tokens)} →
-      ${esc(cb.final_tokens)} token，丢弃：${esc((cb.dropped_sections || []).join("、") || "无")}）。
+      ${esc(cb.final_tokens)} token${detail ? "，" + detail : ""}）。
       结论只对<b>被读到的那部分材料</b>成立。</span>`);
   }
   if (!bits.length) return "";
@@ -1325,9 +1517,15 @@ async function startRun() {
 const BUBBLE_RENDER_MS = 100;
 
 function bubbleKey(ev) {
-  // 必须带上候选人：3~5 路并发时，不同候选人的 pro_open 是同一个 key，
-  // 只用 key 会让后一个人的发言覆盖前一个人的气泡（曾经就是这样）。
-  return (ev.candidate || "") + "::" + (ev.key || "");
+  // 用 candidate_id，不能用姓名。两个理由：
+  // ① 3~5 路并发时，不同候选人的 pro_open 是同一个 key，只用 key 会让
+  //    后一个人的发言覆盖前一个人的气泡（曾经就是这样）；
+  // ② 即使把姓名拼上也还不够——同一个岗位下出现两个「张伟」是真实存在的
+  //    （identity 模块专门处理同名，align 报告层甚至拒绝按姓名回退匹配）。
+  //    存储层按 ID，展示层也必须按 ID，否则两块逻辑自相矛盾。
+  // 旧事件/旧库里没有 candidate_id 时回退到姓名，保证历史数据仍能显示。
+  const who = ev.candidate_id || ev.candidate || "";
+  return who + "::" + (ev.key || "");
 }
 
 function findBubble(feed, ev) {
@@ -1475,105 +1673,6 @@ function initLiveFeedFollow() {
 }
 
 function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
-
-/* ---------------------------------------------------------------------------
-   环境自检
-   demo 现场最怕的不是功能不好用，而是"配好了但跑不起来"且不知道卡在哪。
-   默认只查不需要联网的四项；点「检测模型连通性」才真的打一次 API
-   （服务端缓存 10 分钟，避免每刷一次页面就烧一次额度）。
---------------------------------------------------------------------------- */
-async function loadSelfcheck(probe) {
-  const box = $("scItems");
-  if (!box) return;
-  if (probe) {
-    const btn = $("scProbeBtn");
-    if (btn) { btn.disabled = true; btn.textContent = "检测中…"; }
-  }
-  try {
-    const r = await API.selfcheck(!!probe);
-    renderSelfcheck(r);
-  } catch (e) {
-    $("scSummary").textContent = "自检失败：" + (e.message || "");
-  } finally {
-    const btn = $("scProbeBtn");
-    if (btn) { btn.disabled = false; btn.textContent = "检测模型连通性"; }
-  }
-}
-
-function probeSelfcheck() { return loadSelfcheck(true); }
-
-function renderSelfcheck(r) {
-  const items = [];
-  const db = r.db || {};
-  items.push({
-    ok: !!db.ok,
-    label: "数据库",
-    text: db.ok
-      ? (db.writable ? "可读可写" : "只读！评审结果将无法保存")
-      : ("不可用：" + (db.error || "未知")),
-    extra: "schema v" + (r.schema_version || "?"),
-  });
-
-  const prov = r.provider || {};
-  items.push({
-    ok: !!prov.configured,
-    label: "模型配置",
-    text: prov.configured
-      ? `${esc(prov.provider || "")} ${esc(prov.model || "")}`.trim()
-      : (prov.note || "未配置"),
-    extra: prov.needs_key ? "需要 API Key" : "",
-  });
-
-  const bk = r.backup || {};
-  const age = bk.age_hours;
-  items.push({
-    ok: bk.count > 0 && !bk.stale,
-    label: "备份",
-    text: bk.count === 0
-      ? "还没有备份"
-      : `${bk.count} 份 · 最近 ${age == null ? "?" : age} 小时前`,
-    extra: bk.stale ? "已过期，建议现在备份一次" : "",
-  });
-
-  if (r.connectivity) {
-    const c = r.connectivity;
-    items.push({
-      ok: !!c.ok,
-      label: "模型连通性",
-      text: c.ok ? `可用（${c.latency_ms} ms）` : (c.error || "不可用"),
-      extra: r.connectivity_cached_for
-        ? `结果缓存 ${r.connectivity_cached_for}s` : "",
-    });
-  } else {
-    items.push({ ok: null, label: "模型连通性", text: "未检测", extra: "点上方按钮" });
-  }
-
-  if (r.credits) {
-    const cr = r.credits;
-    items.push({
-      ok: cr.ok !== false,
-      label: "WorkBuddy 额度",
-      text: cr.ok === false ? (cr.error || "读取失败")
-        : (cr.text || cr.remaining_text || cr.summary || "已读取"),
-      extra: "",
-    });
-  }
-
-  $("scItems").innerHTML = items.map(it => `
-    <div class="sc-item ${it.ok === true ? "ok" : it.ok === false ? "bad" : "warn"}">
-      <span class="sc-dot"></span>
-      <b>${esc(it.label)}</b>
-      <span class="sc-text">${it.text || ""}</span>
-      ${it.extra ? `<span class="sc-extra muted">${esc(it.extra)}</span>` : ""}
-    </div>`).join("");
-
-  const bad = items.filter(x => x.ok === false).length;
-  $("scSummary").textContent = bad
-    ? `${bad} 项需要注意`
-    : "全部正常";
-  $("scNote").textContent = r.note || "";
-}
-
 
 /* ---------------------------------------------------------------------------
    辩论直播间浮窗
@@ -2518,7 +2617,10 @@ function onUpFilesPicked(input) {
 function renderFileList(elId, list, storeKey) {
   $(elId).innerHTML = list.map((f, i) => {
     const kb = Math.round((f.size || 0) / 1024);
-    const role = f.role === "assessment" ? "测评" : f.role === "transcript" ? "转写" : "简历";
+    const isAudio = /\.(mp3|wav|m4a|mp4|ogg|webm)$/i.test(f.filename || "");
+    const role = f.role === "assessment" ? "测评"
+      : isAudio ? "录音"
+      : f.role === "transcript" ? "转写" : "简历";
     return `<div class="file-row">
       <span class="fname">${esc(f.filename)}</span>
       <span class="fmeta">${role} · ${kb}KB</span>
@@ -2550,6 +2652,7 @@ function guessRole(name) {
   const low = (name || "").toLowerCase();
   if (/测评|评测|笔试|机试|assessment|test|exam|logic/.test(low)) return "assessment";
   if (/转写|面试|逐字稿|transcript|interview/.test(low)) return "transcript";
+  if (/\.(mp3|wav|m4a|mp4|ogg|webm)$/.test(low)) return "transcript";  // 录音的内容就是转写稿
   return "resume";
 }
 
@@ -2796,7 +2899,10 @@ async function probeTest() {
 /* ===================== 星空背景（装饰） =====================
    克制的原则：**绝大部分星星是静止的**，只有约一成会极缓慢地"呼吸"，
    且用正弦而不是线性+反弹——满屏同时闪烁会把人的余光一直勾住，看久了很累。 */
+let __starfieldStarted = false;
 function bootStarfield() {
+  if (__starfieldStarted) return;
+  __starfieldStarted = true;
   const cv = $("starfield");
   if (!cv) return;
   const ctx = cv.getContext("2d");
@@ -3028,18 +3134,19 @@ function bootIntro() {
 /* ===================== toast ===================== */
 function toast(msg, kind = "info", duration = 3600) {
   const host = $("toastHost");
-  const colors = {
-    info: "background:rgba(20,28,56,.94);color:#c8d0f0;border:1px solid rgba(140,160,255,.3);",
-    err: "background:rgba(60,20,30,.94);color:#ffb8c8;border:1px solid rgba(255,122,154,.5);",
-    ok: "background:rgba(20,50,35,.94);color:#9fe8c8;border:1px solid rgba(110,231,180,.4);",
-  };
+  if (!host) return;
+  const k = (kind === "ok" || kind === "err") ? kind : "info";
+  const icon = k === "ok" ? "✓" : k === "err" ? "!" : "i";
   const el = document.createElement("div");
-  el.style.cssText = "padding:10px 18px;border-radius:10px;font-size:13px;margin-top:8px;" +
-    "box-shadow:0 4px 20px rgba(0,0,0,.4);" + (colors[kind] || colors.info);
-  el.textContent = msg;
+  el.className = "toast toast-" + k;
+  el.setAttribute("role", k === "err" ? "alert" : "status");
+  el.innerHTML = '<span class="toast-ico">' + icon + "</span>" +
+    '<span class="toast-msg">' + esc(msg) + "</span>";
   host.appendChild(el);
-  setTimeout(() => { el.style.transition = "opacity .3s"; el.style.opacity = "0";
-    setTimeout(() => el.remove(), 300); }, duration);
+  setTimeout(() => {
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 300);
+  }, duration);
 }
 
 /* =====================================================================
@@ -4263,3 +4370,749 @@ async function confirmRestore(name) {
 }
 
 function closeBackup() { $("backupModal").classList.add("hidden"); }
+
+/* =====================================================================
+   EvidenceGate：案件 / 证据链校验 / 主题
+   ---------------------------------------------------------------------
+   这段代码是新增的产品面，原有岗位/人才库/分析/管理一字未改。
+   原则：所有结论都要能回到「材料 → 主张 → 闸门」这条链；
+   界面上不出现"分数决定一切"的表达。
+   ===================================================================== */
+
+/* ---------------- 主题 ---------------- */
+function isDarkTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark";
+}
+
+function applyThemeChrome() {
+  const b = $("themeBtn");
+  if (b) b.textContent = isDarkTheme() ? "◑ 浅色" : "◐ 深色";
+}
+
+function toggleTheme() {
+  const next = isDarkTheme() ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  const link = $("themeCss");
+  if (link) link.href = next === "dark" ? "styles-dark.css" : "styles.css";
+  try { localStorage.setItem("eg-theme", next); } catch (e) { /* 隐私模式忽略 */ }
+  applyThemeChrome();
+  if (next === "dark") bootStarfield();
+}
+
+/* ---------------- 加载状态 ---------------- */
+const BOOT_START = (window.performance && performance.now) ? performance.now() : Date.now();
+let bootHidden = false;
+
+function hideBoot(immediate) {
+  if (bootHidden) return;
+  bootHidden = true;
+  const el = $("bootLoader");
+  if (!el) return;
+  if (immediate) {
+    // 登录页要立刻出现：不做淡出，避免加载层和登录框叠在一起。
+    if (el.parentNode) el.remove();
+    return;
+  }
+  const now = (window.performance && performance.now) ? performance.now() : Date.now();
+  // 太快闪一下反而像故障：至少留 520ms 让人看清"在核对会话"。
+  const wait = Math.max(0, 520 - (now - BOOT_START));
+  setTimeout(() => {
+    el.classList.add("done");
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 480);
+  }, wait);
+}
+
+function loadingHTML(text) {
+  return '<div class="load-block"><span class="load-dots"><i></i><i></i><i></i></span>' +
+    "<span>" + esc(text || "加载中…") + "</span></div>";
+}
+
+/** 按钮忙碌：保留原文字，结束时恢复；label 可给出"正在做什么"。 */
+function busy(btn, on, label) {
+  if (!btn) return;
+  if (on) {
+    btn.dataset.label = btn.textContent;
+    btn.classList.add("is-loading");
+    btn.disabled = true;
+    if (label) btn.textContent = label;
+  } else {
+    btn.classList.remove("is-loading");
+    btn.disabled = false;
+    if (btn.dataset.label) {
+      btn.textContent = btn.dataset.label;
+      delete btn.dataset.label;
+    }
+  }
+}
+
+function skipIntro() {
+  const intro = $("intro");
+  if (intro && intro.parentNode) intro.remove();
+  document.querySelectorAll(".pre-intro").forEach(el => el.classList.add("on"));
+}
+
+/* ---------------- 案件 ---------------- */
+const CASE_STATUS_META = {
+  draft: { cls: "idle", label: "草稿" },
+  verified: { cls: "pass", label: "已出具" },
+  blocked: { cls: "fail", label: "阻断" },
+  needs_human: { cls: "human", label: "待复核" },
+};
+const GATE_META = {
+  pass: { cls: "pass", label: "通过", glyph: "✓" },
+  fail: { cls: "fail", label: "阻断", glyph: "×" },
+  needs_human: { cls: "human", label: "待复核", glyph: "!" },
+};
+
+function caseStatusMeta(s) {
+  return CASE_STATUS_META[s] || { cls: "idle", label: s || "未知" };
+}
+
+async function loadProfiles() {
+  try {
+    const r = await API.profiles();
+    state.profiles = r.profiles || [];
+  } catch (e) {
+    state.profiles = [];
+  }
+}
+
+async function loadCases() {
+  const grid = $("caseGrid");
+  if (!grid) return;
+  grid.innerHTML = loadingHTML("正在读取案件…");
+  try {
+    const r = await API.cases();
+    state.cases = r.cases || [];
+    renderCaseStats(r.stats || {});
+    renderCases();
+  } catch (e) {
+    grid.innerHTML = '<div class="ev-empty">案件加载失败：' + esc(e.message) + "</div>";
+  }
+}
+
+function renderCaseStats(stats) {
+  const box = $("caseStats");
+  if (!box) return;
+  const by = stats.by_status || {};
+  const cells = [
+    { v: stats.cases || 0, l: "案件总数", cls: "" },
+    { v: by.verified || 0, l: "已出具（闸门通过）", cls: "ok" },
+    { v: by.blocked || 0, l: "阻断（缺口未闭合）", cls: "bad" },
+    { v: (by.needs_human || 0) + (by.draft || 0), l: "待复核 / 草稿", cls: "warn" },
+  ];
+  box.innerHTML = cells.map(c =>
+    `<div class="ev-stat ${esc(c.cls)}"><div class="v">${esc(c.v)}</div>` +
+    `<div class="l">${esc(c.l)}</div></div>`).join("");
+}
+
+function renderCases() {
+  const grid = $("caseGrid");
+  if (!grid) return;
+  const rows = state.cases || [];
+  if (!rows.length) {
+    grid.innerHTML = '<div class="ev-empty">还没有案件。点右上角「新建案件」，' +
+      "选一个场景（人才筛选 / 费用报销），再往里放材料。<br><br>" +
+      "不知道选哪个？「人才筛选」处理简历与候选人，「费用报销」处理发票与审批——" +
+      "案件进入后顶部会清楚标注它属于哪一类。</div>";
+    return;
+  }
+  // 按场景分组：避免「人才」和「报销」混在同一列表里让使用者分不清"案件"到底是什么。
+  const groups = {};
+  rows.forEach(c => {
+    const k = c.profile_key || "other";
+    (groups[k] = groups[k] || []).push(c);
+  });
+  const order = Object.keys(groups).sort();
+  const metaOf = (key) => (state.profiles || []).find(p => p.key === key) || null;
+  let html = "";
+  order.forEach(key => {
+    const meta = metaOf(key);
+    const label = meta ? (meta.title || key) : key;
+    html += '<div class="ev-group"><div class="ev-group-h">' + esc(label) +
+      ' <span class="muted">' + groups[key].length + " 件</span></div>";
+    html += groups[key].map(c => {
+      const st = caseStatusMeta(c.status);
+      const g = c.gate || null;
+      const gc = g ? GATE_META[g.verdict] || GATE_META.needs_human : null;
+      const counts = c.counts || {};
+      const head = g
+        ? `<span class="ev-status ${esc(gc.cls)}"><span class="dot"></span>${esc(gc.label)}</span>`
+        : `<span class="ev-status idle"><span class="dot"></span>${esc(st.label)}</span>`;
+      const hash = g ? esc(String(g.hash || "").slice(0, 12)) : "—";
+      const when = esc(String(c.updated_at || "").replace("T", " "));
+      const sd = c.single_deploy ? ' <span class="ev-sd" title="单机单人部署：签署分离按声明降级">单人模式</span>' : "";
+      return '<article class="ev-case" onclick="openCase(\'' + esc(c.id) + '\')">' +
+        '<div class="top"><h3>' + esc(c.title) + sd + "</h3>" + head + "</div>" +
+        '<div class="sub"><span>更新 ' + when + "</span></div>" +
+        '<div class="nums">' +
+        "<span><b>" + esc(counts.artifacts || 0) + "</b> 材料</span>" +
+        "<span><b>" + esc(counts.claims || 0) + "</b> 主张</span>" +
+        "<span><b>" + esc(counts.verified || 0) + "/" + esc((counts.verified || 0) + (counts.unsupported || 0)) +
+        "</b> 可回链</span></div>" +
+        '<div class="tail"><span class="mono">闸门 ' + hash + "</span>" +
+        "<span>查看 →</span></div></article>";
+    }).join("");
+    html += "</div>";
+  });
+  grid.innerHTML = html;
+}
+
+async function openCase(cid) {
+  $("caseModal").classList.remove("hidden");
+  $("caseBody").innerHTML = loadingHTML("正在读取案件材料…");
+  try {
+    const r = await API.caseDetail(cid);
+    state.caseCurrent = r.case;
+    renderCaseDetail(r.case);
+  } catch (e) {
+    $("caseBody").innerHTML = '<div class="hint">读取失败：' + esc(e.message) + "</div>";
+  }
+}
+
+function closeCase() {
+  $("caseModal").classList.add("hidden");
+  state.caseCurrent = null;
+}
+
+function profileOf(key) {
+  return (state.profiles || []).find(p => p.key === key) || null;
+}
+
+function renderCaseDetail(c) {
+  $("caseModalTitle").textContent = "案件详情";
+  const st = caseStatusMeta(c.status);
+  const g = c.gate;
+  const gm = g ? (GATE_META[g.verdict] || GATE_META.needs_human) : null;
+  const counts = c.counts || {};
+
+  let html = '<div class="ev-detail-head"><div>' +
+    '<h2>' + esc(c.title) + "</h2>" +
+    `<div class="meta"><span class="ev-status ${esc(st.cls)}"><span class="dot"></span>` +
+    esc(st.label) + "</span>" +
+    '<span class="ev-prof">' + esc(c.profile_label || "") + "</span>" +
+    "<span>创建 " + esc(String(c.created_at || "").replace("T", " ")) + "</span>" +
+    "<span>指纹 " + esc(String(c.evidence_digest || "").slice(0, 12)) + "</span></div></div></div>";
+
+  if (g) {
+    const blockingClauses = (g.clauses || []).filter(x => x.status === "fail");
+    html += `<div class="ev-verdict ${esc(gm.cls)}">` +
+      '<div class="glyph">' + esc(gm.glyph) + "</div><div>" +
+      '<div class="word">' + esc(gm.label) + "</div>" +
+      '<div class="note">' + esc(g.verdict === "pass"
+        ? "全部阻断条款闭合；" + (g.caveats.length ? "仍有保留项，见下" : "无保留项")
+        : g.blocking.length + " 条阻断条款未闭合") + "</div></div></div>" +
+      '<div class="ev-kvs">' +
+      '<div class="ev-kv"><div class="k">可复现编号</div><div class="v mono">' + esc(String(g.hash || "").slice(0, 16)) + "</div></div>" +
+      '<div class="ev-kv"><div class="k">求值时间</div><div class="v mono">' + esc(String(g.evaluated_at || "").replace("T", " ")) + "</div></div>" +
+      '<div class="ev-kv"><div class="k">主张</div><div class="v">' + esc((counts.verified || 0) + "/" + (counts.claims || 0)) + " 可回链</div></div>" +
+      '<div class="ev-kv"><div class="k">材料</div><div class="v">' + esc(counts.artifacts || 0) + " 份</div></div>" +
+      "</div>";
+    // 阻断时给出「卡在哪 + 该补什么」，而不是只丢一个红色 BLOCK 让使用者发懵。
+    if (blockingClauses.length) {
+      const items = blockingClauses.map(cl =>
+        '<li><b>' + esc(cl.code) + "</b>：" + esc(cl.detail || "未闭合") + "</li>").join("");
+      html += '<div class="ev-banner bad"><span>⛔</span><div><b>还不能出具：</b>' +
+        "以下条款未闭合。审计上「缺一项证据」就不足以出具结论，补上对应材料或主张后再重新求值即可：<ul class='ev-blist'>" +
+        items + "</ul>" +
+        (c.single_deploy ? "<div class='muted' style='margin-top:6px'>单机单人模式：签署分离已按声明降级，不计入阻断。</div>" : "") +
+        "</div></div>";
+    }
+    if (g.caveats && g.caveats.length) {
+      html += '<div class="ev-banner warn"><span>⚠</span><div><b>保留项：</b>' +
+        g.caveats.map(esc).join("；") + "</div></div>";
+    }
+    if (g.stale) {
+      html += '<div class="ev-banner warn"><span>⚠</span><div><b>结论已过期：</b>' +
+        "案件在闸门求值之后被改过，当前结论不对应现在的材料。请重新求值。</div></div>";
+    }
+  } else {
+    html += '<div class="ev-banner info"><span>ℹ</span><div>还没有闸门结论。' +
+      "放齐材料、写入主张后点「重新求值」——它会先核验引用，再跑闸门。</div></div>";
+  }
+
+  // 材料
+  html += '<div class="ev-sec"><div class="ev-sec-h"><h4>材料</h4>' +
+    '<span class="right">' + esc((c.artifacts || []).length) + " 份</span></div>";
+  if ((c.artifacts || []).length) {
+    html += '<table class="ev-table"><thead><tr><th>角色</th><th>文件</th>' +
+      '<th class="num">字符</th><th class="num">指纹</th></tr></thead><tbody>' +
+      c.artifacts.map(a => "<tr><td>" + esc(a.role) + "</td><td>" + esc(a.filename || "—") +
+        '</td><td class="num">' + esc(a.chars || 0) + '</td><td class="num">' +
+        esc(String(a.sha256 || "").slice(0, 10)) + "</td></tr>").join("") +
+      "</tbody></table>";
+  } else {
+    html += '<p class="hint">还没有材料。下面可以粘贴原文（材料正文加密入库）。</p>';
+  }
+  html += "</div>";
+
+  // 主张
+  html += '<div class="ev-sec"><div class="ev-sec-h"><h4>主张与引用</h4>' +
+    '<span class="right">' + esc(counts.verified || 0) + " 可回链 / " +
+    esc(counts.unsupported || 0) + " 已剔除</span></div>";
+  if ((c.claims || []).length) {
+    html += c.claims.map((cl, i) => {
+      const ok = cl.status === "verified";
+      const cls = ok ? "" : " unsupported";
+      const why = ok ? "" : '<span class="why">' + esc(cl.note || "无法回链") + "</span>";
+      const cites = (cl.citations || []).map(x =>
+        '<span class="ev-cite">↗ ' + esc(x.locator || x.artifact_id) + "</span>").join(" ");
+      return `<div class="ev-claim${cls}"><span class="n">${i + 1}</span><div>` +
+        '<div class="txt">' + esc(cl.text) + "</div>" +
+        '<div class="why">' + cites + " " + why + "</div></div></div>";
+    }).join("");
+  } else {
+    const canExtract = (c.artifacts || []).length > 0;
+    html += '<p class="hint">还没有主张。一条主张至少要带一条原文引用，否则会被闸门剔除。' +
+      (canExtract
+        ? '不想逐条手抄？点右上「✨ 自动抽取主张」，模型会从材料里抽出带引文的草稿供你核对。'
+        : '先往案件里放材料，再写或抽取主张。') + "</p>";
+  }
+  html += "</div>";
+
+  // 可核验范围说明：把"未锚定"这种工程诚实声明，翻译成使用者能用的话。
+  html += '<div class="ev-banner info" style="margin-top:14px"><span>ℹ</span><div>' +
+    "<b>这份证据包能证明什么：</b>材料指纹、引用逐字命中、闸门条款闭合、三级签署" +
+    "都在库内连续可复算——换个人打开证据包里的 verify.py 也能重跑出同一结论。" +
+    "但<b>链头尚未外部锚定</b>：只能证明「库内没被单点篡改」，不能证明「整库没有被整体替换」。" +
+    "对外只说「可核验、可追溯」，不说「不可篡改」。</div></div>";
+
+  // 闸门条款
+  if (g && g.clauses && g.clauses.length) {
+    html += '<div class="ev-sec"><div class="ev-sec-h"><h4>闸门条款</h4>' +
+      '<span class="right">非补偿：任一阻断条款未闭合即不可出具</span></div>' +
+      '<table class="ev-table"><thead><tr><th>条款</th><th>要求</th><th>判定</th>' +
+      '<th>依据</th></tr></thead><tbody>' +
+      g.clauses.map(x => {
+        const mm = x.status === "pass" ? GATE_META.pass
+          : x.status === "needs_human" ? GATE_META.needs_human : GATE_META.fail;
+        return '<tr><td class="code">' + esc(x.code) + "</td><td>" + esc(x.requirement) +
+          `</td><td><span class="ev-status ${esc(mm.cls)}"><span class="dot"></span>` +
+          esc(mm.label) + "</span></td><td>" + esc(x.detail || "") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+
+  // 签署
+  html += '<div class="ev-sec"><div class="ev-sec-h"><h4>三级复核</h4>' +
+    '<span class="right">人签，不是 agent 签</span></div><div class="ev-sign">' +
+    (c.sign_roles || []).map(role => {
+      const hit = (c.approvals || []).find(a => a.role === role);
+      return hit
+        ? '<span class="who">' + esc(role) + " <b>" + esc(hit.actor) + "</b> · " +
+          esc(String(hit.signed_at || "").replace("T", " ")) + "</span>"
+        : '<button class="who missing" onclick="signCurrentCase(\'' + esc(role) +
+          '\', this)">' + esc(role) + " · 未签，点此签署</button>";
+    }).join("") + "</div></div>";
+
+  // 动作
+  html += '<div class="ev-actions">' +
+    '<button class="btn primary" onclick="rerunCaseGate(this)">重新求值闸门</button>' +
+    '<button class="btn" onclick="downloadCaseBundle(this)">下载证据包（含 verify.py）</button>' +
+    '<button class="btn danger-ghost" onclick="deleteCurrentCase(this)">删除案件</button>' +
+    "</div>";
+
+  // 加材料 / 加主张（简单表单，够跑通一次完整流程）
+  const prof = profileOf(c.profile_key) || { artifact_roles: [] };
+  const roles = prof.artifact_roles || [];
+  const artOpts = (c.artifacts || []).map(a =>
+    '<option value="' + esc(a.id) + '">' + esc(a.role) + " · " + esc(a.filename || a.id) + "</option>").join("");
+  html += '<div class="ev-sec"><div class="ev-sec-h"><h4>追加材料</h4></div>' +
+    '<div class="ev-form"><div class="row2">' +
+    '<div><label>角色</label><select id="caRole">' +
+    roles.map(r => '<option value="' + esc(r) + '">' + esc(r) + "</option>").join("") +
+    '</select></div><div><label>文件名</label><input id="caName" placeholder="发票.pdf"></div></div>' +
+    '<div><label>正文（逐字，供引用核验）</label><textarea id="caText" rows="3"></textarea></div>' +
+    '<div><button class="btn" onclick="addCaseArtifact(this)">添加材料</button></div></div></div>';
+
+  html += '<div class="ev-sec"><div class="ev-sec-h"><h4>追加主张</h4>' +
+    '<span class="right"><button class="btn tiny ghost" id="ccExtractBtn" ' +
+    'onclick="extractCaseClaims(this)">✨ 自动抽取主张</button></span></div>' +
+    '<p class="hint" id="ccExtractHint">材料已入库后，点「自动抽取」让模型从原文抽出可证伪的论断草稿；' +
+    '每条都带逐字引文，你核对后可一键写入。模型只负责「找」，核准权在你。</p>' +
+    '<div id="ccDrafts" class="ev-drafts hidden"></div>' +
+    '<div class="ev-form">' +
+    '<div><label>主张（一句可被证伪的话）</label><input id="ccText" placeholder="' +
+    esc(c.profile_key === "talent" ? "候选人有 5 年后端经验" : "发票金额为 42800.00 元") +
+    '"></div>' +
+    '<div class="row2"><div><label>引用材料</label><select id="ccArt">' + artOpts + "</select></div>" +
+    '<div><label>定位（人看）</label><input id="ccLoc" placeholder="p.12 / L40-L42"></div></div>' +
+    '<div><label>逐字引文（必须原样出现在正文里）</label><input id="ccQuote" placeholder="金额 42800.00 元"></div>' +
+    '<div><button class="btn" onclick="addCaseClaim(this)">添加主张</button></div></div></div>';
+
+  $("caseBody").innerHTML = html;
+}
+
+async function rerunCaseGate(btn) {
+  if (!state.caseCurrent) return;
+  busy(btn, true, "正在求值…");
+  try {
+    const r = await API.caseGate(state.caseCurrent.id);
+    state.caseCurrent = r.case;
+    renderCaseDetail(r.case);
+    loadCases();
+    toast("闸门已重新求值", "ok");
+  } catch (e) {
+    toast("求值失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function signCurrentCase(role, btn) {
+  if (!state.caseCurrent) return;
+  busy(btn, true, "签署中…");
+  try {
+    const r = await API.caseSign(state.caseCurrent.id, { role: role });
+    state.caseCurrent = r.case;
+    renderCaseDetail(r.case);
+    loadCases();
+    toast("已签署：" + role, "ok");
+  } catch (e) {
+    toast("签署失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function downloadCaseBundle(btn) {
+  if (!state.caseCurrent) return;
+  busy(btn, true, "正在打包…");
+  try {
+    const r = await API.caseBundle(state.caseCurrent.id, {});
+    const b = r.bundle || {};
+    const bin = atob(b.data_base64 || "");
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "application/zip" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = b.filename || "evidence-bundle.zip";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    toast("证据包已导出（sha256 " + String(b.sha256 || "").slice(0, 10) + "…）", "ok");
+  } catch (e) {
+    toast("导出失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function addCaseArtifact(btn) {
+  const c = state.caseCurrent;
+  if (!c) return;
+  const role = ($("caRole") || {}).value;
+  const name = ($("caName") || {}).value || "";
+  const text = ($("caText") || {}).value || "";
+  if (!text.trim()) { toast("材料正文不能为空", "err"); return; }
+  busy(btn, true, "正在入库…");
+  try {
+    const r = await API.caseArtifact(c.id, { role: role, filename: name, text: text });
+    state.caseCurrent = r.case;
+    renderCaseDetail(r.case);
+    loadCases();
+    toast("材料已加入（加密入库）", "ok");
+  } catch (e) {
+    toast("添加失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function addCaseClaim(btn) {
+  const c = state.caseCurrent;
+  if (!c) return;
+  const text = ($("ccText") || {}).value || "";
+  const art = ($("ccArt") || {}).value || "";
+  const loc = ($("ccLoc") || {}).value || "";
+  const quote = ($("ccQuote") || {}).value || "";
+  if (!text.trim()) { toast("主张不能为空", "err"); return; }
+  if (!art) { toast("先添加材料，再写主张", "err"); return; }
+  const payload = (c.claims || []).map(x => ({
+    text: x.text,
+    stance: x.stance || "neutral",
+    citations: (x.citations || []).map(y => ({
+      artifact_id: y.artifact_id, locator: y.locator, quote: y.quote,
+    })),
+  }));
+  const cites = quote.trim() ? [{ artifact_id: art, locator: loc, quote: quote }] : [];
+  payload.push({ text: text, citations: cites });
+  busy(btn, true, "正在写入…");
+  try {
+    const r = await API.caseClaims(c.id, { claims: payload });
+    state.caseCurrent = r.case;
+    renderCaseDetail(r.case);
+    loadCases();
+    toast("主张已写入；跑一次闸门才能知道它是否可回链", "ok");
+  } catch (e) {
+    toast("写入失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+/* 自动抽取主张：调 LLM 从材料抽草稿，使用者核对后写入。 */
+let _caseDrafts = [];
+
+async function extractCaseClaims(btn) {
+  const c = state.caseCurrent;
+  if (!c) return;
+  if (!c.artifacts || !c.artifacts.length) {
+    toast("先添加材料，再抽取主张", "err");
+    return;
+  }
+  busy(btn, true, "正在从材料抽取主张…");
+  try {
+    const r = await API.caseExtract(c.id);
+    _caseDrafts = (r.drafts || []).map((d, i) => ({
+      idx: i, text: d.text, quote: d.quote, locator: d.locator || "",
+      artifact_id: d.artifact_id || "", quote_in_text: !!d.quote_in_text,
+      keep: true,
+    }));
+    if (!_caseDrafts.length) {
+      toast("模型没有从材料中抽出可证伪的论断（也许材料里本就没有明确陈述）", "info");
+      return;
+    }
+    renderCaseDrafts();
+    toast("抽出 " + _caseDrafts.length + " 条草稿，请核对引文后再写入", "ok");
+  } catch (e) {
+    toast("抽取失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+function renderCaseDrafts() {
+  const box = $("ccDrafts");
+  if (!box) return;
+  if (!_caseDrafts.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  const artOpts = (state.caseCurrent.artifacts || []).map(a =>
+    '<option value="' + esc(a.id) + '">' + esc(a.role) + " · " + esc(a.filename || a.id) + "</option>").join("");
+  box.classList.remove("hidden");
+  box.innerHTML = '<div class="ev-drafts-head"><b>抽取草稿（' + _caseDrafts.length +
+    ' 条）</b><span class="muted">勾选要保留的；引文标黄表示该句未能在原文中逐字找到，请核对或改引文</span></div>' +
+    _caseDrafts.map((d, i) => {
+      const qcls = d.quote_in_text ? "ok" : "warn";
+      const qtip = d.quote_in_text ? "引文可在原文中逐字找到" : "未在原文件中逐字命中，请核对";
+      return '<div class="ev-draft" data-i="' + i + '">' +
+        '<label class="ev-draft-chk"><input type="checkbox" ' + (d.keep ? "checked" : "") +
+        ' onchange="toggleDraft(' + i + ', this.checked)"></label>' +
+        '<div class="ev-draft-body">' +
+        '<input class="ev-draft-text" value="' + esc(d.text) + '" oninput="draftText(' + i + ', this.value)">' +
+        '<div class="ev-draft-row"><span class="ev-q ' + qcls + '" title="' + esc(qtip) + '">↗ 引文</span>' +
+        '<input class="ev-draft-quote" value="' + esc(d.quote) + '" oninput="draftQuote(' + i + ', this.value)">' +
+        '<select class="ev-draft-art" onchange="draftArt(' + i + ', this.value)">' +
+        artOpts + '</select>' +
+        '<input class="ev-draft-loc" value="' + esc(d.locator) + '" placeholder="定位（人看）" oninput="draftLoc(' + i + ', this.value)">' +
+        '<button class="ev-draft-x" onclick="dropDraft(' + i + ')">✕</button></div></div></div>';
+    }).join("") +
+    '<div class="ev-drafts-actions"><button class="btn primary" onclick="writeCaseDrafts(this)">' +
+    '写入选中主张</button><button class="btn" onclick="clearCaseDrafts()">清空草稿</button></div>';
+  // 默认把每条草稿绑定到第一份材料，使用者可改
+  _caseDrafts.forEach((d, i) => {
+    if (!d.artifact_id && state.caseCurrent.artifacts && state.caseCurrent.artifacts.length) {
+      d.artifact_id = state.caseCurrent.artifacts[0].id;
+    }
+  });
+  refreshDraftArtSelects();
+}
+
+function refreshDraftArtSelects() {
+  const box = $("ccDrafts");
+  if (!box) return;
+  const sels = box.querySelectorAll(".ev-draft-art");
+  sels.forEach((s, i) => { if (_caseDrafts[i]) s.value = _caseDrafts[i].artifact_id; });
+}
+
+function toggleDraft(i, v) { if (_caseDrafts[i]) _caseDrafts[i].keep = v; }
+function draftText(i, v) { if (_caseDrafts[i]) _caseDrafts[i].text = v; }
+function draftQuote(i, v) {
+  if (!_caseDrafts[i]) return;
+  _caseDrafts[i].quote = v;
+  // 引文改动后无法保证仍在原文逐字命中，标记为需核对
+  _caseDrafts[i].quote_in_text = false;
+  const q = document.querySelectorAll("#ccDrafts .ev-draft .ev-q")[i];
+  if (q) { q.className = "ev-q warn"; q.title = "已手工编辑引文，请确认与原文一致"; }
+}
+function draftArt(i, v) { if (_caseDrafts[i]) _caseDrafts[i].artifact_id = v; }
+function draftLoc(i, v) { if (_caseDrafts[i]) _caseDrafts[i].locator = v; }
+function dropDraft(i) { _caseDrafts.splice(i, 1); renderCaseDrafts(); }
+function clearCaseDrafts() { _caseDrafts = []; renderCaseDrafts(); }
+
+async function writeCaseDrafts(btn) {
+  const c = state.caseCurrent;
+  if (!c) return;
+  const chosen = _caseDrafts.filter(d => d.keep && d.text.trim() && d.artifact_id);
+  if (!chosen.length) { toast("没有勾选可写入的主张", "err"); return; }
+  const payload = (c.claims || []).map(x => ({
+    text: x.text,
+    stance: x.stance || "neutral",
+    citations: (x.citations || []).map(y => ({
+      artifact_id: y.artifact_id, locator: y.locator, quote: y.quote,
+    })),
+  }));
+  for (const d of chosen) {
+    payload.push({
+      text: d.text,
+      citations: [{ artifact_id: d.artifact_id, locator: d.locator, quote: d.quote }],
+    });
+  }
+  busy(btn, true, "正在写入…");
+  try {
+    const r = await API.caseClaims(c.id, { claims: payload });
+    state.caseCurrent = r.case;
+    _caseDrafts = [];
+    renderCaseDetail(r.case);
+    loadCases();
+    toast("已写入 " + chosen.length + " 条主张；跑一次闸门才能知道哪些可回链", "ok");
+  } catch (e) {
+    toast("写入失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function deleteCurrentCase(btn) {
+  const c = state.caseCurrent;
+  if (!c) return;
+  if (!confirm("删除案件「" + c.title + "」？材料、主张、闸门结论与签署记录会一并删除（审计日志保留）。")) return;
+  busy(btn, true, "删除中…");
+  try {
+    await API.caseDelete(c.id);
+    closeCase();
+    loadCases();
+    toast("案件已删除", "ok");
+  } catch (e) {
+    toast("删除失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+/* ---------------- 新建案件 ---------------- */
+function openNewCase() {
+  const sel = $("ncProfile");
+  if (!sel) return;
+  sel.innerHTML = (state.profiles || []).map(p =>
+    '<option value="' + esc(p.key) + '">' + esc(p.title || p.key) +
+    "（" + esc(p.label) + "）</option>").join("");
+  $("ncTitle").value = "";
+  $("ncNote").value = "";
+  $("ncMsg").textContent = "";
+  renderProfileHint();
+  $("newCaseModal").classList.remove("hidden");
+  setTimeout(() => $("ncTitle").focus(), 60);
+}
+
+function renderProfileHint() {
+  const key = ($("ncProfile") || {}).value;
+  const p = profileOf(key);
+  const hint = $("ncProfileHint");
+  if (!p || !hint) return;
+  hint.textContent = "必需材料：" + (p.required_roles || []).join(" / ") +
+    "；可选角色：" + (p.artifact_roles || []).join(" / ") +
+    (p.note ? "。" + p.note : "");
+}
+
+function closeNewCase() { $("newCaseModal").classList.add("hidden"); }
+
+async function createCase() {
+  const title = ($("ncTitle") || {}).value || "";
+  const key = ($("ncProfile") || {}).value || "";
+  const note = ($("ncNote") || {}).value || "";
+  if (!title.trim()) { $("ncMsg").textContent = "请填写案件标题"; return; }
+  const btn = $("ncCreate");
+  busy(btn, true, "创建中…");
+  try {
+    const r = await API.caseCreate({ title: title, profile_key: key, note: note,
+      single_deploy: !!($("ncSingle") || {}).checked });
+    closeNewCase();
+    await loadCases();
+    openCase(r.case.id);
+    toast("案件已创建。下一步：先「追加材料」，再用「✨ 自动抽取主张」生成草稿", "ok");
+  } catch (e) {
+    $("ncMsg").textContent = e.message;
+  } finally {
+    busy(btn, false);
+  }
+}
+
+/* ---------------- 证据链校验 ---------------- */
+async function loadEvidence(verbose) {
+  const box = $("evidenceBody");
+  if (!box) return;
+  box.innerHTML = loadingHTML("正在核对 8 项证据链检查…");
+  try {
+    const r = await API.goldenThread();
+    state.evidence = r;
+    renderEvidence(r);
+    if (verbose) toast("校验完成：" + r.verdict, r.verdict === "pass" ? "ok" : "info");
+  } catch (e) {
+    box.innerHTML = '<div class="ev-empty">校验失败：' + esc(e.message) + "</div>";
+  }
+}
+
+function renderEvidence(r) {
+  const box = $("evidenceBody");
+  if (!box) return;
+  const v = r.verdict === "pass" ? { cls: "pass", word: "通过", glyph: "✓" }
+    : r.verdict === "attention" ? { cls: "warn", word: "有条件通过", glyph: "!" }
+      : { cls: "fail", word: "阻断", glyph: "×" };
+  const s = r.summary || {};
+  const trail = r.trail || {};
+  const checks = r.checks || [];
+
+  let html = '<div class="card" style="padding:18px 20px">' +
+    `<div class="ev-verdict ${esc(v.cls)}"><div class="glyph">${esc(v.glyph)}</div><div>` +
+    '<div class="word">' + esc(v.word) + "</div>" +
+    '<div class="note">' + esc(s.passed || 0) + " / " + esc(s.total || 0) +
+    " 项通过 · " + esc(s.warnings || 0) + " 项保留 · " + esc(s.failed || 0) + " 项失败</div>" +
+    "</div></div>" +
+    '<div class="ev-kvs">' +
+    '<div class="ev-kv"><div class="k">追踪 ID</div><div class="v mono">' + esc(r.trace_id || "") + "</div></div>" +
+    '<div class="ev-kv"><div class="k">数据指纹</div><div class="v mono">' + esc(String(r.dataset_hash || "").slice(0, 20)) + "…</div></div>" +
+    '<div class="ev-kv"><div class="k">留痕</div><div class="v">' + esc(trail.count || 0) + " 条 · " +
+    (trail.anchored ? "已锚定" : "未锚定") + "</div></div>" +
+    '<div class="ev-kv"><div class="k">生成时间</div><div class="v mono">' +
+    esc(String(r.generated_at || "").replace("T", " ")) + "</div></div></div></div>";
+
+  html += '<div class="ev-split" style="margin-top:16px"><div class="card">' +
+    '<div class="card-head"><h3>校验项</h3><span class="muted" style="margin-left:auto;font-size:11.5px">' +
+    "每一项都给出可复算的数字；没有数据记「未验证」</span></div>" +
+    '<div style="padding:4px 6px 8px">' + checks.map(c => {
+      const m = { cls: c.status === "pass" ? "pass" : c.status === "warn" ? "warn" : "fail" };
+      const label = c.status === "pass" ? "通过" : c.status === "warn" ? "保留" : "失败";
+      return '<div class="ev-check"><span class="id">' + esc(c.id) + "</span>" +
+        '<span class="title">' + esc(c.title) + "<small>" + esc(c.detail) + "</small></span>" +
+        '<span class="val">' + esc(c.value) + "</span>" +
+        `<span class="st"><span class="ev-status ${esc(m.cls)}"><span class="dot"></span>` +
+        esc(label) + "</span></span></div>";
+    }).join("") + "</div></div>";
+
+  // 侧栏
+  html += '<div style="display:grid;gap:14px">';
+  html += '<div class="ev-do"><h4>留痕</h4>' +
+    '<div class="row"><span class="k">链长度</span><span class="mono">' + esc(trail.count || 0) + " 条</span></div>" +
+    '<div class="row"><span class="k">链校验</span><span class="mono">' + (trail.verified ? "连续" : "断链") + "</span></div>" +
+    '<div class="row"><span class="k">外部锚定</span><span class="mono">' + (trail.anchored ? "已锚定" : "未锚定") + "</span></div>" +
+    '<p class="hint" style="margin-top:8px">未锚定意味着：只能证明库内未被改动，' +
+    "不能证明链头未被整体替换。对客户只能说「可核验」，不能说「不可篡改」。</p></div>";
+
+  const cases = r.cases || {};
+  html += '<div class="ev-do"><h4>案件</h4>' +
+    '<div class="row"><span class="k">总数</span><span class="mono">' + esc(cases.cases || 0) + "</span></div>" +
+    '<div class="row"><span class="k">闸门求值次数</span><span class="mono">' + esc(cases.gate_runs || 0) + "</span></div>" +
+    '<div class="row"><span class="k">最近结论</span><span class="mono">' +
+    esc(JSON.stringify(cases.latest_verdicts || {})) + "</span></div></div>";
+
+  html += '<div class="ev-do"><h4>已注册场景</h4><ul class="ev-list">' +
+    (r.profiles || []).map(p => '<li><span>' + esc(p.title || p.key) + "</span>" +
+      '<span class="mono">' + esc(p.label) + "</span></li>").join("") +
+    "</ul></div>";
+
+  html += '<div class="ev-banner info"><span>ℹ</span><div>校验页只回答「这套东西还成立吗」。' +
+    "具体某个案件能不能出具，看案件详情里的闸门条款——两者不要混为一谈。</div></div>";
+  html += "</div></div>";
+
+  box.innerHTML = html;
+}

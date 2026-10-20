@@ -3,10 +3,41 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>多 Agent 对立式人才筛选 · 招聘工作台</title>
-<link rel="stylesheet" href="styles.css" />
+<title>EvidenceGate · 证据裁定台</title>
+<link rel="stylesheet" href="styles.css" id="themeCss" />
+<link rel="stylesheet" href="evidence.css" />
+<script>
+/* 主题必须在首屏绘制前决定，否则会先闪一下浅色再切深色。
+   默认浅色：审计/复核的主介质是打印、投影与 PDF，深色在这些介质里是负资产。 */
+(function () {
+  var t = "light";
+  try { t = localStorage.getItem("eg-theme") || "light"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", t);
+  if (t === "dark") {
+    var l = document.getElementById("themeCss");
+    if (l) l.href = "styles-dark.css";
+  }
+})();
+</script>
 </head>
 <body>
+<!-- ==================== 启动加载 ====================
+     先给一个能看懂的"正在做什么"，而不是白屏或假页面。
+     会话校验完成 / 需要登录时淡出；深色主题下同一层用深色底。 -->
+<div id="bootLoader" class="boot-loader" role="status" aria-live="polite" aria-busy="true">
+  <div class="boot-mark" aria-hidden="true">
+    <svg viewBox="0 0 40 40" width="52" height="52">
+      <path class="ic-pro" d="M4.5 12.5 L16 20 L4.5 27.5 Z"/>
+      <path class="ic-con" d="M35.5 12.5 L24 20 L35.5 27.5 Z"/>
+      <circle class="ic-halo" cx="20" cy="20" r="6.2"/>
+      <circle class="ic-star" cx="20" cy="20" r="3.1"/>
+    </svg>
+    <span class="boot-ring"></span>
+  </div>
+  <div class="boot-title">EvidenceGate</div>
+  <div class="boot-sub" id="bootSub">正在核对会话与留痕…</div>
+</div>
+
 <canvas id="starfield"></canvas>
 
 <!-- ==================== 登录 / 初始化闸门 ====================
@@ -15,12 +46,19 @@
 <div id="authGate" class="auth-gate hidden">
   <div class="auth-card">
     <div class="auth-logo">
-      <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
-        <path d="M4.5 12.5 L16 20 L4.5 27.5 Z" fill="#6ea8ff" opacity=".85"/>
-        <path d="M35.5 12.5 L24 20 L35.5 27.5 Z" fill="#ff7a9a" opacity=".85"/>
-        <circle cx="20" cy="20" r="3.1" fill="#ffd97a"/>
-      </svg>
+      <span class="auth-mark" aria-hidden="true">
+        <!-- 原始标记：正反两方对撞 + 中间裁判恒星。
+             浅色下把三个色值压深（否则浅蓝/浅红在白底上几乎看不见），
+             深色下恢复原色。形状不变。 -->
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <path class="ic-pro" d="M4.5 12.5 L16 20 L4.5 27.5 Z"/>
+          <path class="ic-con" d="M35.5 12.5 L24 20 L35.5 27.5 Z"/>
+          <circle class="ic-halo" cx="20" cy="20" r="6.2"/>
+          <circle class="ic-star" cx="20" cy="20" r="3.1"/>
+        </svg>
+      </span>
     </div>
+    <div class="auth-brand">EvidenceGate</div>
 
     <!-- 首次启动：创建管理员 -->
     <div id="authSetup" class="hidden">
@@ -53,8 +91,8 @@
 
     <!-- 常规登录 -->
     <div id="authLogin" class="hidden">
-      <h2>招聘工作台</h2>
-      <p class="auth-sub">多 Agent 对立式评审 · 本地部署</p>
+      <h2>证据裁定台</h2>
+      <p class="auth-sub">案件 → 证据 → 裁定 → 闸门 → 留痕 · 本地部署</p>
       <div class="field">
         <label>账号</label>
         <input id="loginUser" type="text" autocomplete="username">
@@ -69,7 +107,8 @@
     </div>
 
     <div class="auth-note">
-      本工具处理真实个人信息，仅限本机/可信内网使用。所有操作记入不可篡改的审计日志。
+      本工具处理真实个人信息，仅限本机/可信内网使用。所有操作记入<strong>可核验</strong>的审计日志；
+      链头未外部锚定前，不承诺「不可篡改」。
     </div>
   </div>
 </div>
@@ -99,16 +138,18 @@
     </svg>
   </div>
   <div class="titles">
-    <h1>招聘工作台 · 多 Agent 对立式筛选</h1>
-    <div class="sub">正反 Agent 实时博弈 → 裁判剔除幻觉 → 三评委盲审 → 中位数聚合定级</div>
+    <h1>EvidenceGate · 证据裁定台</h1>
+    <div class="sub">案件 → 证据 → 裁定 → 闸门 → 留痕 · 同一套脊柱，多场景</div>
   </div>
   <nav class="topnav">
-    <button class="navbtn on" id="navJobs" onclick="switchView('jobs')">岗位</button>
-    <button class="navbtn" id="navTalent" onclick="switchView('talent')">人才库</button>
-    <button class="navbtn" id="navAnalytics" onclick="switchView('analytics')">分析</button>
+    <button class="navbtn on" id="navConsole" onclick="switchView('console')">控制台</button>
+    <button class="navbtn" id="navCases" onclick="switchView('cases')">案件</button>
+    <button class="navbtn" id="navEvidence" onclick="switchView('evidence')">证据链</button>
     <button class="navbtn admin-only hidden" id="navAdmin" onclick="switchView('admin')">管理</button>
   </nav>
   <div class="spacer"></div>
+  <button class="btn tiny ghost" id="themeBtn" onclick="toggleTheme()"
+          title="在浅色（打印/投影友好）与深色之间切换">◐ 深色</button>
   <span class="pending-badge hidden" id="pendingBadge" onclick="switchView('talent');filterPending()"
         title="有候选人疑似与库中记录是同一人，等待你确认"></span>
   <button class="btn tiny ghost hidden" id="pendingBatchBtn" onclick="openBatchIdentity()"
@@ -123,8 +164,157 @@
 
 <main id="app" class="pre-intro">
 
+  <!-- ==================== 控制台：EvidenceGate 门面 ====================
+       这里是产品入口，不放业务页签。岗位/人才库/分析属于「人才筛选分系统」，
+       进去之后才有自己的子导航；顶层只保留跨系统的东西（案件、证据链、管理）。 -->
+  <section id="viewConsole" class="view">
+    <div class="portal">
+      <div class="portal-hero">
+        <span class="portal-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="54" height="54">
+            <path class="ic-pro" d="M4.5 12.5 L16 20 L4.5 27.5 Z"/>
+            <path class="ic-con" d="M35.5 12.5 L24 20 L35.5 27.5 Z"/>
+            <circle class="ic-halo" cx="20" cy="20" r="6.2"/>
+            <circle class="ic-star" cx="20" cy="20" r="3.1"/>
+          </svg>
+        </span>
+        <div class="portal-title">EvidenceGate</div>
+        <div class="portal-cn">证据裁定台</div>
+        <p class="portal-sub">
+          统一身份权限 · 证据模型 · 审查工作流 · 审计追溯
+        </p>
+      </div>
+
+      <div class="portal-section-h">
+        <span>分系统</span>
+        <span class="muted">人才筛选是第一个，其余按同一套证据脊柱扩展</span>
+      </div>
+
+      <div class="portal-grid">
+        <button class="sys-card" onclick="enterTalent(false)">
+          <span class="sys-ico">人</span>
+          <span class="sys-name">人才筛选分系统</span>
+          <span class="sys-desc">岗位、候选人、正反辩论、三评委、回测对齐与人才库沉淀。</span>
+          <span class="sys-foot"><span class="sys-badge live">现有业务核心</span>
+            <span class="sys-go">进入 →</span></span>
+        </button>
+
+        <button class="sys-card" onclick="switchView('cases')">
+          <span class="sys-ico">证</span>
+          <span class="sys-name">案件与证据</span>
+          <span class="sys-desc">材料 → 主张 → 引用核验 → 非补偿闸门 → 证据包，领域无关。</span>
+          <span class="sys-foot"><span class="sys-badge live">已上线</span>
+            <span class="sys-go">进入 →</span></span>
+        </button>
+
+        <button class="sys-card" onclick="switchView('evidence')">
+          <span class="sys-ico">链</span>
+          <span class="sys-name">证据链校验</span>
+          <span class="sys-desc">审计链、口径版本、闸门可复现、签署分离、锚定状态。</span>
+          <span class="sys-foot"><span class="sys-badge live">已上线</span>
+            <span class="sys-go">进入 →</span></span>
+        </button>
+
+        <div class="sys-card soon">
+          <span class="sys-ico">规</span>
+          <span class="sys-name">规则审查</span>
+          <span class="sys-desc">完整性检查、规则执行、问题清单。</span>
+          <span class="sys-foot"><span class="sys-badge soon">待补充</span></span>
+        </div>
+
+        <div class="sys-card soon">
+          <span class="sys-ico">核</span>
+          <span class="sys-name">交叉核验</span>
+          <span class="sys-desc">多文件声明比对、冲突定位、跨材料一致性。</span>
+          <span class="sys-foot"><span class="sys-badge soon">待补充</span></span>
+        </div>
+
+        <div class="sys-card soon">
+          <span class="sys-ico">流</span>
+          <span class="sys-name">审查工作流</span>
+          <span class="sys-desc">任务分派、人工复核、补充材料、三级签署。</span>
+          <span class="sys-foot"><span class="sys-badge soon">待补充</span></span>
+        </div>
+
+        <div class="sys-card soon">
+          <span class="sys-ico">析</span>
+          <span class="sys-name">审计与分析</span>
+          <span class="sys-desc">历史追溯、报告导出、质量评估、漂移监控。</span>
+          <span class="sys-foot"><span class="sys-badge soon">待补充</span></span>
+        </div>
+
+        <div class="sys-card soon">
+          <span class="sys-ico">接</span>
+          <span class="sys-name">接入与集成</span>
+          <span class="sys-desc">LDAP / 飞书 / 企业微信、对象存储、SFTP 取数。</span>
+          <span class="sys-foot"><span class="sys-badge soon">待补充</span></span>
+        </div>
+      </div>
+
+      <div class="portal-foot">
+        <span class="mono" id="portalFoot">正在读取系统状态…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 子系统壳：只在人才筛选里出现 ==================== -->
+  <div id="sysBar" class="sysbar hidden">
+    <button class="btn ghost tiny" onclick="leaveTalent()">← 返回控制台</button>
+    <span class="sysbar-name">人才筛选分系统</span>
+    <div class="sysbar-tabs">
+      <button class="sysbar-tab on" id="sysTabJobs" onclick="switchView('jobs')">岗位</button>
+      <button class="sysbar-tab" id="sysTabTalent" onclick="switchView('talent')">人才库</button>
+      <button class="sysbar-tab" id="sysTabAnalytics" onclick="switchView('analytics')">分析</button>
+    </div>
+    <button class="btn ghost tiny" onclick="enterTalent(true)" title="在新窗口打开子系统">↗ 新窗口</button>
+  </div>
+
+  <!-- ==================== 〇、案件：领域无关的入口 ====================
+       这里不出现「候选人 / 发票 / 合同」这些词——案件只是「一组材料 + 一组主张」。
+       具体是什么场景，由 profile 决定。 -->
+  <section id="viewCases" class="view">
+    <div class="ev-wrap">
+      <div class="ev-head">
+        <div>
+          <h2>案件</h2>
+          <p>
+            每个案件 = 一组材料 + 一组主张 + 一道非补偿闸门。
+            结论要么回到原文，要么被显式剔除；缺口不会被高分补回来。
+          </p>
+        </div>
+        <div class="acts">
+          <button class="btn" onclick="loadCases()">刷新</button>
+          <button class="btn primary" onclick="openNewCase()">＋ 新建案件</button>
+        </div>
+      </div>
+      <div class="ev-stats" id="caseStats"></div>
+      <div id="caseGrid" class="ev-grid"></div>
+    </div>
+  </section>
+
+  <!-- ==================== 〇、证据链校验 ====================
+       回答的是「这套东西端到端还成立吗」，所以每一项都给可复算的数字，
+       并且允许 warn（例如链头未外部锚定）——不把保留项涂成绿色。 -->
+  <section id="viewEvidence" class="view hidden">
+    <div class="ev-wrap">
+      <div class="ev-head">
+        <div>
+          <h2>证据链校验</h2>
+          <p>
+            逐项核对：审计链、运行收尾、口径版本、引用核验、闸门可复现、签署分离、证据包、链头锚定。
+            没有数据记「未验证」，不记「通过」。
+          </p>
+        </div>
+        <div class="acts">
+          <button class="btn primary" onclick="loadEvidence(true)">运行全套校验</button>
+        </div>
+      </div>
+      <div id="evidenceBody"><div class="ev-empty">加载中…</div></div>
+    </div>
+  </section>
+
   <!-- ==================== 一、主界面：仪表盘 + 岗位列表 ==================== -->
-  <section id="viewHome" class="view">
+  <section id="viewHome" class="view hidden">
 
     <div class="dash-head">
       <div>
@@ -132,19 +322,6 @@
         <p class="dash-sub">用多 Agent 对抗式评审，把一份简历变成可解释、可复盘的结论</p>
       </div>
       <button class="btn primary lg" onclick="openNewJob()">＋ 新建岗位</button>
-    </div>
-
-    <!-- 环境自检：demo 现场最怕"配好了但跑不起来"却不知道卡在哪 -->
-    <div id="selfcheckBand" class="selfcheck">
-      <div class="sc-head">
-        <b>环境自检</b>
-        <span class="muted" id="scSummary">检查中…</span>
-        <button class="btn tiny ghost" id="scProbeBtn" onclick="probeSelfcheck()"
-                title="会真实发起一次最小模型调用（消耗极少额度）">检测模型连通性</button>
-        <button class="btn tiny ghost" onclick="loadSelfcheck(false)">刷新</button>
-      </div>
-      <div id="scItems" class="sc-items"></div>
-      <div class="hint" id="scNote"></div>
     </div>
 
     <!-- 概览 -->
@@ -727,9 +904,9 @@
         <div id="upDrop" class="drop-zone">
           <div class="drop-ico">⬆</div>
           <div>把文件拖到这里，或 <span class="link" onclick="document.getElementById('upFiles').click()">点击选择</span></div>
-          <div class="hint">文件名带「测评/assessment」会自动归为测评，其余视为简历</div>
+          <div class="hint">文件名带「测评/assessment」自动归为测评、「录音/面试」归为转写，其余视为简历；录音需配置 ASR 引擎（见 README）</div>
         </div>
-        <input type="file" id="upFiles" multiple accept=".docx,.pdf,.txt,.md,.json,.png,.jpg,.jpeg,.webp" class="hidden" onchange="onUpFilesPicked(this)">
+        <input type="file" id="upFiles" multiple accept=".docx,.pdf,.txt,.md,.json,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,.ogg,.webm" class="hidden" onchange="onUpFilesPicked(this)">
         <div id="upFilesList" class="file-list"></div>
       </div>
       <div class="modal-actions">
@@ -1123,6 +1300,56 @@
     </div>
     <div class="modal-body">
       <div id="compareBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 案件详情（EvidenceGate） ==================== -->
+<div id="caseModal" class="modal hidden" onclick="if(event.target===this)closeCase()">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2 id="caseModalTitle">—</h2>
+      <button class="modal-x" onclick="closeCase()">✕</button>
+    </div>
+    <div class="modal-body" id="caseBody"><div class="hint">加载中…</div></div>
+  </div>
+</div>
+
+<!-- ==================== 新建案件 ==================== -->
+<div id="newCaseModal" class="modal hidden" onclick="if(event.target===this)closeNewCase()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>新建案件</h2>
+      <button class="modal-x" onclick="closeNewCase()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">
+        案件本身不知道行业。先选场景（profile），它决定材料有哪几类、
+        缺哪类不能出具、闸门条款长什么样。
+      </p>
+      <div class="field">
+        <label>案件标题</label>
+        <input id="ncTitle" type="text" placeholder="例如：12 月云服务采购" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>场景</label>
+        <select id="ncProfile"></select>
+        <div class="hint" id="ncProfileHint"></div>
+      </div>
+      <div class="field">
+        <label>备注 <span class="muted">可选</span></label>
+        <textarea id="ncNote" rows="2" placeholder="材料来源、提供人、有效期……"></textarea>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="ncSingle">
+        <span>我是单机单人使用（只有我一个账号）。<b>勾选后</b>，三级签署可由同一人完成，
+        但系统会在审计链中明确标注「分离未满足」——这是如实记录，不是正常分离。</span>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeNewCase()">取消</button>
+        <button class="btn primary" id="ncCreate" onclick="createCase()">创建案件</button>
+      </div>
+      <div class="auth-msg" id="ncMsg"></div>
     </div>
   </div>
 </div>

@@ -12,21 +12,21 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "self.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import api
-import backup
-import provider_probe
+from engine.api import api
+from   engine.guardrails import backup
+from   engine.api import provider_probe
 
 PORT = 8298
 os.environ["PORT"] = str(PORT)
@@ -40,7 +40,7 @@ def check(name, ok, detail=""):
         FAIL.append(name)
 
 
-import server as srvmod
+from engine.api import server as srvmod
 srv = srvmod._make_server()
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 

@@ -15,22 +15,22 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "stream.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import agents
-import llm_client
-import runs
-import sse
+from engine.orchestrator import agents
+from   engine.api import llm_client
+from   engine.orchestrator import runs
+from   engine.api import sse
 
 FAIL = []
 
@@ -69,7 +69,7 @@ chunks4, _ = llm_client.parse_sse_deltas(['data: {"choices":[{"delta":null}]}'])
 check("delta 为 null 不抛错", chunks4 == [], chunks4)
 
 print("\n--- 2. 增量事件不落库 ---")
-import store
+from engine.storage import store
 job = store.create_job("流式测试岗", {"requirements": []})
 run = runs.start(job["id"], ["c1"], actor="tester", rubric_version="rTEST")
 rid = run["id"]
@@ -222,7 +222,7 @@ def fake_stream(messages, model, api_key, base_url, temperature, use_json,
 
 def fake_raw(messages, model, api_key, base_url, temperature, use_json, timeout):
     """裁定与评委走非流式路径：它们输出 JSON，逐字流出来既难看也没意义。"""
-    from util import DIMENSIONS as DIMS
+    from engine.orchestrator.util import DIMENSIONS as DIMS
     sysmsg = messages[0].get("content") or ""
     if "评委" in sysmsg:
         return (json.dumps({DIMS[0]: 8.0, DIMS[1]: 8.0, DIMS[2]: 8.0,

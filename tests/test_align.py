@@ -4,20 +4,20 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "align.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import align
-import store
+from engine.guardrails import align
+from   engine.storage import store
 
 FAIL = []
 
@@ -126,7 +126,7 @@ row = conn.execute("SELECT decision, decision_reason, decided_by FROM candidates
 check("理由落库", row["decision_reason"].startswith("清华"), dict(row))
 check("记录决策人", row["decided_by"] == "hr1", dict(row))
 
-import audit
+from engine.guardrails import audit
 n = conn.execute("SELECT COUNT(*) AS n FROM audit WHERE action='candidate.decide'"
                  ).fetchone()["n"]
 check("决策写入审计链", n == 1, n)

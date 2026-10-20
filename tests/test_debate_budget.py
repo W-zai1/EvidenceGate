@@ -10,22 +10,22 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "debate.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import agents
-import context
-import llm_client
-import store
+from engine.orchestrator import agents
+from   engine.orchestrator import context
+from   engine.api import llm_client
+from   engine.storage import store
 
 FAIL = []
 
@@ -113,7 +113,7 @@ def fake_stream(messages, model, api_key, base_url, temperature, use_json,
 
 
 def fake_raw(messages, model, api_key, base_url, temperature, use_json, timeout):
-    from util import DIMENSIONS as D
+    from engine.orchestrator.util import DIMENSIONS as D
     sysmsg = messages[0].get("content") or ""
     user = messages[-1].get("content") or ""
     CAP["system"].append(sysmsg)

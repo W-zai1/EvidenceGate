@@ -11,22 +11,22 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENGINE = os.path.join(os.path.dirname(HERE), "engine")
+ENGINE = os.path.dirname(HERE)
 sys.path.insert(0, ENGINE)
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "unit.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 
-import identity
-import fence
-import cost_estimate
-import util
+from engine.extract import identity
+from   engine.intake import fence
+from   engine.api import cost_estimate
+from   engine.orchestrator import util
 
 PASS, FAIL = [], []
 
@@ -192,7 +192,7 @@ except Exception as e:
 
 # =============================================== 路径安全
 sec("路径安全：静态文件不能穿出 viewer/")
-import http_base
+from engine.api import http_base
 VIEWER = os.path.join(os.path.dirname(HERE), "viewer")
 
 

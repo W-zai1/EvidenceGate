@@ -1,21 +1,109 @@
-# WzTalent-Screening · 证据审计型人才筛选助手
+# EvidenceGate · 证据裁定台
 
-> **先说结论，因为你最该知道的是它不能干什么。**
+> **这个仓库现在有两个入口，共用同一套证据脊柱：**
 >
-> 这个系统**不能**替你决定录用谁。它给出的 0–10 分和 A/B/C 等级是**未经标定的相对信号**，
-> 没有经过真实录用结果校准，跨岗位、跨版本都不可比较。
+> - **EvidenceGate（默认入口）**：案件 → 材料 → 主张 → 引用核验 → 非补偿闸门 → 三级复核 → 证据包。
+>   它不知道行业；「人才筛选」只是其中一个 profile。
+> - **人才筛选工作台（`profile: talent`）**：原有的岗位 / 候选人 / 正反辩论 / 三评委 / 回测对齐，
+>   功能一字未删，仍然可用。
 >
-> 它**能**做的是三件事，而且这三件事有真实价值：
-> ① 把简历里**没有原文支撑**的论断挑出来给你看（反幻觉审计）；
-> ② 找出材料里**最含糊、最该当面问清**的地方（核心争议点）→ 自动生成可证伪的面试追问；
-> ③ 把「谁评的、按什么口径评的、改过什么」全部留痕，能回答「为什么这个人被淘汰」。
+> 浅色是默认主题（打印、投影、PDF 与黑白复印都可读），深色保留，右上角一键切换。
+> 登录后的落点是**控制台**：EvidenceGate 居中，下面是各分系统入口；
+> 岗位、人才库、分析收在「人才筛选分系统」里，有自己的子导航与独立窗口（`↗ 新窗口`）。
 >
-> 如果把它当"自动筛人机"，它是危险且不负责任的；把它当"面试前的证据整理助手"，它确实省时间。
-> 详见 [能力边界与合规](#能力边界与合规必须读) —— 那一节是这份文档里最重要的部分。
+> 缘起与取舍见 [docs/ORIGIN.md](docs/ORIGIN.md)。
+
+![控制台](docs/images/console.png)
 
 ---
 
-## 它到底做什么
+## 一句话说明它凭什么可信
+
+```
+材料（原文 + 指纹）
+  → 主张（每句都要带原文引用）
+  → 核验（确定性：引文在不在原文里、材料变没变、算术对不对）
+  → 非补偿闸门（缺证据/有矛盾/需人判 → 阻断，分数补不回来）
+  → 三级复核（编制 / 复核 / 批准，必须不同的人）
+  → 证据包（manifest + claims + 原句切片 + 离线 verify.py）
+```
+
+三条不让步的规则：
+
+1. **没有原文支撑的主张必须被显式剔除**，保留编号与原因，不允许静默消失；
+2. **缺口不能被别处的高分补偿**——闸门是 `AND`，不是加权平均；
+3. **没有数据记「未验证」，不记「通过」**——包括「链头未外部锚定」这种对自己不利的事实。
+
+> 边界同样写清楚：本地哈希链只能证明**库内一致**，不能证明链头未被整体替换；
+> 要对外承诺，必须先做外部锚定。对外话术是「可核验、可追溯」，不是「不可篡改」。
+
+---
+
+## 证据脊柱（`engine/spine/`）
+
+| 模块 | 作用 | 关键性质 |
+|---|---|---|
+| `spine/ir.py` | 领域无关对象：`Claim / EvidenceRef / Finding / GateResult` | 序列化可复现（规范化 JSON + SHA-256） |
+| `spine/verify.py` | 引用核验：材料在不在、指纹变没变、引文是否逐字命中、字符区间 | 纯确定性，不调模型 |
+| `spine/gate.py` | 非补偿闸门：条款是数据，求值是纯函数 | 同一输入 100 次 → 同一个 hash |
+| `spine/profiles/` | `talent` / `expense` 两个场景；注册即扩展 | 换场景不改脊柱 |
+| `spine/bundle.py` | 证据包 + 独立 `verify.py` | 对方不信任你也能自己验 |
+
+闸门三态：`pass` / `block` / `needs_human`。`UNKNOWN` 不允许折叠成 `pass`。
+
+两个内置 profile 的差别只在配置：
+
+| | `talent@2026.10.1` | `expense@2026.10.1` |
+|---|---|---|
+| 主体 | 候选人 | 一笔报销 |
+| 必需材料 | 简历 | 发票 / 审批流 / 制度 |
+| 维度 | 匹配度 / 软素质 / 硬门槛 | 真实性 / 金额一致 / 审批合规 / 费用标准 |
+| 评委数 | 3（排序需要多数视角） | 1（要的是能否入账，不是投票） |
+| 签署角色 | maker / checker / approver | claimant / approver / reviewer |
+
+新增一个场景 = 在 `spine/profiles/` 加一个文件 + `registry.register()`。**`spine/gate.py` 一行不用改**，`tests/test_gate.py` 会守住这一点。
+
+---
+
+## 界面
+
+| 页面 | 回答的问题 |
+|---|---|
+| **控制台**（默认） | 我现在能用哪些分系统、哪些还没补 |
+| **案件** | 手上有哪些案件、卡在哪、闸门结论是什么 |
+| **证据链** | 这套东西端到端还成立吗（8 项可复算检查，允许「保留」） |
+| 人才筛选分系统 | 岗位 / 人才库 / 分析；进去后有自己的子导航与「新窗口」入口，不占顶层页签 |
+
+分系统有自己的壳与子导航，「岗位 / 人才库 / 分析」不再出现在顶层：
+
+![人才筛选分系统](docs/images/talent-system.png)
+
+![证据链校验](docs/images/evidence.png)
+
+加载状态分三档，都不只转一个圈：启动层写明「正在核对会话与留痕」，列表写明「正在读取案件」，
+按钮写明「正在求值 / 签署 / 打包」，并在 `prefers-reduced-motion` 下停掉动画、保留静态提示。
+
+![启动加载](docs/images/loading-boot.png)
+
+![列表等待](docs/images/loading-inline.png)
+
+![案件详情：引用、剔除与闸门条款](docs/images/case-detail.png)
+
+深色主题保留（同一套组件、不同的 token）：
+
+![深色主题](docs/images/cases-dark.png)
+
+UI 的实现取舍写在 [`design/light/README.md`](design/light/README.md)；
+浅色主题由 `tools/build_light_theme.py` 从 `viewer/styles-dark.css` 机械映射生成，
+再叠加 `viewer/styles.css` 末尾的手工修正层（语义色、阴影、状态三件套）。
+
+---
+
+## 它到底做什么（talent profile）
+
+> **这一档的边界没有变**：0–10 分未经标定、三位评委不独立、注入只能降风险不能消除。
+> 它**不能**替你决定录用谁；能做的仍是「把没有原文支撑的论断挑出来、把最该当面问清的地方列出来、把谁按什么口径评的留痕」。
+> 详见 [能力边界与合规](#能力边界与合规必须读) —— 那一节是这份文档里最重要的部分。
 
 ```
 岗位要求 ──→ 结构化（硬性要求 / 优先项 / 风险红线 / 维度权重）+ 人工核对
@@ -125,8 +213,16 @@
 
 ### 6. 其他已知限制
 
-- **ASR 需要额外依赖**：`skills/asr-transcribe` 用 `faster-whisper`，这是全项目唯一的第三方依赖，
-  且是**可选的**——不装就只影响面试录音转写，其他功能不受影响。
+- **ASR 转写需要可选依赖**：`skills/asr-transcribe` 用 `faster-whisper`（全项目唯一第三方依赖）。
+  装了并设 `ASR_ENGINE=whisper` 就能转写上传的面试录音（段级时间戳）；**不装也不影响其他功能**，
+  可改用 `.txt/.md` 转写稿。系统不提供 mock 转写——编造的面试稿会直接污染评审结论，
+  所以没有真实引擎时它选择显式报错。默认模型 `base`，中文面试建议设 `ASR_MODEL=small`。
+- **说话人归属不用声纹**：层 1 问题清单/前缀文本对齐 + 层 2 LLM 言语行为 + 层 3 人工终审。
+  角色分离（面试官 vs 候选人）可靠；Panel 里区分"哪位面试官"是尽力为准，低置信归"未区分"；
+  **真正的群面（一个面试官 × 多个候选人）不做**——无声纹下区分两个候选人没有可靠自动解，
+  错标会把 A 的话算到 B 头上且无人察觉。另外：给同一位候选人重传一份分段不同的录音时，
+  旧的人工修正按段号保留、可能错位（修正记录带时间戳，界面会标注针对哪一版分段）。
+- **QQ/微信语音是 SILK_v3 专有格式**：PyAV 解不了，需要先把录音转成 mp3/m4a/wav。
 - **PDF 抽文是尽力的**：纯标准库解 FlateDecode + `Tj/TJ`，扫描件和无文本层的 PDF 抽不出内容，
   会明确提示改格式，不会静默返回空字符串。
 - **WorkBuddy 通道不适合生产发布**：它复用本机 WorkBuddy 桌面端的登录凭证。
@@ -142,7 +238,7 @@
 
 - Python **3.11+**（开发环境 3.14）
 - **零第三方依赖**：不用 `pip install` 任何东西
-- 可选：`faster-whisper`（仅当你要转写面试录音）
+- 可选：`faster-whisper`（仅当你要转写上传的面试录音，见 [ASR 配置](#asr-配置可选)）
 
 ### 启动
 
@@ -153,23 +249,37 @@ cd engine
 python server.py --open
 ```
 
-浏览器打开 <http://127.0.0.1:8123>。
+浏览器打开 <http://127.0.0.1:8124>。
+
+默认端口是 **8124**（`engine/server.py`）。被占用时会自动尝试 8125–8129，
+避免"旧实例没关 → 双击 start.bat 窗口一闪就退"。要固定端口：
+
+```bash
+set PORT=8125 && start.bat        # Windows cmd
+PORT=8125 python engine/server.py # Git Bash / PowerShell 的 bash 语法
+```
 
 **首次启动会要求创建管理员账号**。之后：
 
 1. **⚙ 模型设置** → 选供应商、填 Key（WorkBuddy 通道不需要 Key，复用本机积分）→ 测试连通性；
 2. **＋ 新建岗位** → 粘贴或上传 JD → 模型结构化成四条清单 → **逐条核对后保存**；
 3. **上传候选人** → 简历 / 测评 / 转写稿，支持 `.docx .pdf .txt .md .png .jpg`；
+   面试录音（`.mp3 .wav .m4a .mp4 .ogg .webm`）装了 faster-whisper 可直接上传，自动转写成文字稿入库；
+   转写稿可按段做**说话人归属**（面试官/候选人，1:1 与多面试官 Panel 同一套机制），
+   并与面试追问清单做**问答配对**（问了答了/问了没答/没问/即兴追问）——
+   归属不确定的段不计入分析，覆盖率随结果显式给出；
 4. **▶ 开始评审** → 实时看正反辩论（可断线重连、可中途取消）；
 5. **看结果** → 分数与等级只是线索，重点看**反幻觉审计**、**核心争议点**、**面试追问清单**；
 6. **回填真实进展** → 面试通过 / 发放 offer / 入职 / 淘汰 —— 这是唯一能让系统变得可信的动作。
 
 > 页面不含任何演示数据。所有岗位、候选人、结论都来自你自己的输入和真实模型。
 
-**进主界面先看「环境自检」那一条**：库能不能写、模型配没配、备份新不新鲜、
-模型能不能连，一眼可见。其中「检测模型连通性」会**真的发起一次最小调用**
-（消耗极少额度），所以它默认不跑、要你点，且结果在服务端缓存 10 分钟——
-否则每次刷新首页都在烧钱。
+**登录后会自动接通模型**：先实测当前配置；不通就试 WorkBuddy 本机通道（优先免费模型），
+接通后右上角徽章显示 `WorkBuddy · <模型>`，并弹一个提示后淡出。都不通才会提示去「模型设置」。
+同一模型的验证结果在浏览器会话内缓存 10 分钟，避免每刷一次都真实调用一次。
+
+> 原来的「环境自检」面板已移除；`/api/selfcheck` 接口保留（默认不探测、结果缓存 10 分钟），
+> 供运维探活或以后接监控使用。
 
 ### 想要演示数据（可选，显式开启）
 
@@ -186,6 +296,18 @@ python tools/seed_demo.py --init
 
 注入的岗位标题都带 `[演示]` 前缀，脚本结束会打印清理用的 job_id。
 **真实使用前请把这些岗位全部删掉。**
+
+EvidenceGate 的案件演示是另一个脚本（费用报销 ×2 + 人才筛选 ×1，覆盖阻断与通过两种结局）：
+
+```bash
+python tools/seed_gate_demo.py --base http://127.0.0.1:8124 \
+    --user admin --password '你的口令'
+```
+
+它会顺带创建三个 `demo_*` 签署账号（`Demo!pass1`），因为
+**三级复核必须由三个不同的人签**——用 admin 连签三次会被闸门拦下，这正是设计要的。
+所有案件标题同样带 `[演示]`，删除案件只会删数据，审计日志保留。
+
 
 ### 命令行
 
@@ -235,7 +357,30 @@ python run.py --provider ollama   --job ../jobs/my-role.json --inputs ../inputs
 | `REFINE_REPEATS` | 1 | 整场评审重复次数（上限 7）。>1 时取中位数并记录波动，调用数按倍数增加 |
 | `REFINE_BACKUP_DIR` | `data/backups` | 备份目录。备份是普通 `.db` 文件，可直接拷到别处做异地副本 |
 | `REFINE_STREAM` | 1 | 辩论发言是否流式输出。设为 0 退回一次性返回（个别网关/代理会破坏 SSE） |
-| `PORT` / `HOST` | 8123 / 127.0.0.1 | 监听地址 |
+| `PORT` / `HOST` | 8124 / 127.0.0.1 | 监听地址 |
+
+### ASR 配置（可选）
+
+面试录音转写用本地 `faster-whisper`（全项目唯一第三方依赖，**不装不影响其他功能**）：
+
+```bash
+pip install faster-whisper        # 自带 ctranslate2/PyAV，不需要系统装 ffmpeg
+set ASR_ENGINE=whisper            # Windows；macOS/Linux 用 export
+set ASR_MODEL=small               # 中文面试建议 small 起；默认 base
+```
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `ASR_ENGINE` | 空（=显式报错） | `whisper`；**没有 mock 引擎**，未配置时拒绝转写而不是返回占位文本 |
+| `ASR_MODEL` | `base` | tiny/base/small/medium/large-v3 |
+| `ASR_DEVICE` / `ASR_COMPUTE_TYPE` | `auto` | 有 CUDA 自动用（float16），否则 CPU（int8）。**有 NVIDIA 驱动≠有 CUDA 运行时**：缺 cublas 运行库时 auto 会先试 CUDA、失败自动回退 CPU 并留痕；显式设 `ASR_DEVICE=cuda` 则不擅自回退 |
+| `ASR_VAD` | `1` | VAD 过滤静音；面试录音长短停顿多，收益明显 |
+| `ASR_LANGUAGE` | 空=自动识别 | 固定 `zh` 可略减开销 |
+| `ASR_BEAM` | `5` | beam search 宽度 |
+
+转写输出带**段级时间戳**（`segments: [{start, end, text}]`）——这是规划中的
+说话人归属（面试官/候选人分离）的地基，详见 `docs/INTERVIEW_AUDIO_DESIGN.md`。
+上传的录音与其它素材一样落盘存档（`jobs/<岗位>/files/`），转写稿按 `transcript` 角色入库。
 
 ---
 
@@ -409,7 +554,7 @@ python run.py --provider ollama   --job ../jobs/my-role.json --inputs ../inputs
 ```
 viewer/            原生 HTML/CSS/JS，无构建
    ↓ fetch / SSE
-engine/api.py      55 个路由，统一鉴权装饰
+engine/api.py      路由表（含 EvidenceGate 案件 / 证据链接口），统一鉴权装饰
 engine/http_base.py  基类：CSRF / cookie / 错误映射 / 静态文件
 engine/server.py   组合根：SSE → 静态 → API 的分发
    ↓
@@ -475,11 +620,19 @@ talent_screen/
 ├── engine/
 │   ├── server.py          组合根：分发 SSE / 静态 / API
 │   ├── http_base.py       HTTP 基类：CSRF、cookie、错误映射、静态文件白名单
-│   ├── api.py             55 个路由与处理函数
-│   ├── db.py              SQLite 连接、迁移、事务、JSON 列
+│   ├── api.py             路由表（含 EvidenceGate 案件 / 证据链接口）
+│   ├── db.py              SQLite 连接、迁移（v9）、事务、JSON 列
 │   ├── auth.py            口令、会话、角色权限、用户设置
 │   ├── crypto.py          PII 加密（HMAC 流 + encrypt-then-MAC）
 │   ├── audit.py           哈希链审计日志
+│   ├── gate/              ★ 领域无关证据脊柱
+│   │   ├── ir.py          Claim / EvidenceRef / Finding / GateResult
+│   │   ├── verify.py      引用核验（确定性，不调模型）
+│   │   ├── gate.py        非补偿闸门（纯函数、可复现）
+│   │   ├── bundle.py      证据包 + 离线 verify.py
+│   │   └── profiles/      talent / expense + 注册表
+│   ├── cases.py           ★ 通用案件服务：材料加密、主张、签署、闸门落库
+│   ├── validation.py      ★ 证据链校验页的 8 项检查
 │   ├── privacy.py         留存清理、密钥轮换、导出、擦除
 │   ├── identity.py        ★ 多信号身份判定（学历/单位/城市/年份）
 │   ├── store.py           岗位与候选人持久化
@@ -495,9 +648,12 @@ talent_screen/
 │   ├── rubric.py          评分口径版本化
 │   ├── context.py         材料装配与辩论记忆
 │   ├── interview.py       面试追问生成
+│   ├── interview_analysis.py  面试问答配对（问了没答/没问/即兴追问）
+│   ├── diarization.py     ★ 说话人归属三层（问题对齐/LLM 言语行为/人工终审）
 │   ├── align.py           ★ 回测对齐：precision@k / lift、真实决定导入
 │   ├── jd_struct.py       JD 结构化
 │   ├── docparse.py        docx / pdf / txt / 图片 OCR
+│   ├── audio_ingest.py    HTTP 上传的音频转写桥接（字节→skill→文字稿）
 │   ├── llm_client.py      OpenAI 兼容调用 + 用量解析
 │   ├── provider_probe.py  模型列表与连通性测试
 │   ├── workbuddy_client.py  WorkBuddy 反代（仅本地便利，勿用于生产）
@@ -508,18 +664,30 @@ talent_screen/
 │   ├── index.html
 │   ├── app.js
 │   ├── api.js
-│   └── styles.css
+│   ├── evidence.css       ★ 案件 / 证据链视图（深浅色共用变量）
+│   ├── styles.css         浅色主题（默认）
+│   └── styles-dark.css    深色主题（保留）
+├── design/light/          浅色原型与设计 token（提案阶段的产物）
 ├── skills/
 │   ├── resume-parse/      简历解析（标准库）
-│   └── asr-transcribe/    面试录音转写（可选依赖 faster-whisper）
+│   └── asr-transcribe/    面试录音转写（可选依赖 faster-whisper，段级时间戳）
+├── tools/
+│   ├── seed_demo.py       演示岗位（显式运行，标题带 [演示]）
+│   ├── seed_gate_demo.py  ★ 演示案件（费用报销 ×2 + 人才筛选 ×1）
+│   ├── build_light_theme.py  从深色原稿生成浅色主题
+│   └── eval_samples.py    固定样本集评测
 ├── tests/
+│   ├── test_gate.py       52 项：IR 可复现、引用核验、非补偿、证据包离线校验
+│   ├── test_cases.py      35 项：建案/材料加密/闸门/签署/导出/跨 profile
 │   ├── test_unit.py       52 项纯单元测试（不启服务、不联网）
-│   ├── test_e2e.py        70 项端到端测试（真实 HTTP + 打桩模型）
+│   ├── test_e2e.py        101 项端到端测试（真实 HTTP + 打桩模型）
 │   ├── test_acceptance.py 48 项验收测试（逐项证伪 2.3 的 16 个交付点）
 │   ├── test_align.py      33 项对齐单元测试（precision@k 手算核对）
 │   ├── test_align_e2e.py  33 项对齐端到端（建批次→导入→报告→权限）
 │   ├── test_scale.py      18 项 200 人规模测试（并发正确性 + 反向对照）
 │   ├── test_viewer.py     前端一致性（DOM id / 路由 / 转义 / CSS）
+│   ├── test_asr.py        39 项 ASR 引擎与音频上传链路
+│   ├── test_diarization.py 63 项说话人归属与问答配对
 │   ├── check_all_items.py 交付项静态核验
 │   └── check_no_deps.py   零依赖守卫（CI 用）
 ├── .github/workflows/     CI：零依赖检查 + 双平台 × 三版本
@@ -533,6 +701,46 @@ talent_screen/
 
 ---
 
+## 用固定样本集量一次"准不准"（要花真钱，需显式运行）
+
+单元测试证明的是代码没坏，**不能回答"评审准不准"**。那个问题只能靠固定样本跑真模型。
+`tests/fixtures/sample_set_v1.json` 提供了 8 份**纯虚构**简历，每份都写死了人工预期：
+
+| 编号 | 设计意图 | 主要验证点 |
+|---|---|---|
+| A | 与岗位高度匹配 | 该找到的证据是否找到 |
+| B | 部分匹配 | 是否区分"已满足"与"能力缺口" |
+| C | 明显不匹配 | 是否指出关键要求缺失并给出依据 |
+| D | 信息不足 | 是否承认不知道，而不是自行补全 |
+| E | 表述强度模糊 | 是否区分"了解 / 熟悉 / 精通" |
+| F | 格式异常 | 空字段、特殊字符、缺章节是否妥善处理 |
+| G | 超长简历 | 是否发现截断、关键事实是否存活 |
+| H | 含提示词注入 | 是否把简历内容当数据而不是指令 |
+
+每份都有三类预期，缺一不可：
+
+- `must_support`：哪些要求应当找到证据（附"证据必须提到哪些词"）
+- `must_flag_missing`：哪些要求应当判为缺失（附"为什么"）
+- `must_not_claim`：**不该得出什么结论**——这一项最重要，它是挡"过度推断"的唯一闸门
+
+```bash
+python tools/eval_samples.py --init            # 库还空时先建管理员
+python tools/eval_samples.py --only AB         # 先跑两条，省时间
+python tools/eval_samples.py --keep            # 保留评测岗位以便逐条看
+```
+
+三条使用纪律：
+
+- **样本集要冻结**。改了标准就等于改了考题，必须升 `version` 并写原因，
+  否则会不知不觉滑向"不断放宽标准去迎合模型输出"。
+- **环境没配好时不看通过率**。脚本会把"没配 Key / 连不上 / 额度不足"判为
+  环境性失败并**拒绝给出百分比**——一个没配凭证的机器打印"通过 0/8"，
+  看起来像模型极差，实际一句话都没评过。
+- **它是规则化判定，不是人工质量评审**。它只能回答
+  "预期里写明的那些点有没有做到"，回答不了"评审本身写得好不好"。
+
+---
+
 ## 测试
 
 ```bash
@@ -540,10 +748,10 @@ python tests/check_no_deps.py      # 零依赖守卫：engine/ 只能用标准�
 python tests/check_bom.py          # 文件编码：警示文件中途的 BOM
 python tests/check_lookalike.py    # 形近字符：假连字符/全角字母混进选择器
 python tests/check_mojibake.py     # GBK 误解码造成的乱码
-python tests/check_all_items.py    # 交付项核验：逐条比对代码（43 项）
+python tests/check_all_items.py    # 交付项核验：逐条比对代码（49 项）
 cd tests
 python test_unit.py                # 52 项：身份判定、注入检测、加密、路径安全、成本口径
-python test_e2e.py                 # 70 项：认证、身份合并、SSE 续传、审计链、隐私
+python test_e2e.py                 # 101 项：认证、身份合并、SSE 续传、审计链、隐私、面试录音分析
 python test_acceptance.py          # 48 项：逐项验证 2.3 的行为（篡改审计链、并行计时…）
 python test_align.py               # 33 项：precision@k 算术、样本纪律、CSV 解析、决策理由
 python test_align_e2e.py           # 33 项：对齐全流程走真实 HTTP（建批次→导入→报告→权限）
@@ -558,11 +766,19 @@ python test_debate_budget.py       # 26 项：历史裁剪、留痕、裁判与�
 python test_state_guard.py         # 19 项：通用 PATCH 不能改状态/结果/身份
 python test_selfcheck.py           # 26 项：自检四项、探测默认不发、匿名脱敏
 python test_identity_batch.py      # 17 项：批量部分成功、超限拒绝、逐条审计
-python test_evaluations.py         # 11 项：migration 7、评审追加历史、漂移
+python test_event_identity.py      # 16 项：事件带 candidate_id、同名候选人不串台
+python test_event_stage.py         # 24 项：stage/duration_ms/error_type 归一化
+python test_sampleset.py           # 32 项：样本集自洽、超长材料头尾保留
+python test_eval_rules.py          # 19 项：评测判定规则（漏证据/未判缺失/禁止结论/注入）
+python test_evaluations.py         # 11 项：migration 9、评审追加历史、漂移
+python test_gate.py                # 52 项：IR 可复现、引用核验、非补偿、100 次同 hash、证据包离线校验
+python test_cases.py               # 35 项：建案/加密/闸门三态/签署分离/导出/同一脊柱跑两个场景
 python test_backup.py              # 19 项：在线备份、校验、轮转、恢复、文件名不重名
 python test_infra.py               # 20 项：全局并发闸门、上下文预算截断
 python test_measurement_e2e.py     # 51 项：备份/绑定/历史/口径/细则走真实 HTTP
 python test_viewer.py              # 前端一致性：DOM id / 路由 / 转义 / CSS 类 / 重复定义
+python test_asr.py                 # 39 项：ASR 引擎语义、CUDA 回退、音频桥接、角色识别
+python test_diarization.py         # 63 项：说话人归属三层、问答配对四分类、段持久化
 ```
 
 `test_viewer.py` 现在还会查两件真人踩过的事：**api.js 里声明了但 app.js 从没调用的死接口**

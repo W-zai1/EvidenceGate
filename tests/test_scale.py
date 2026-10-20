@@ -10,24 +10,24 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
 os.environ["PORT"] = "8294"
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "scale.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import agents
-import align
-import jobs_runner
-import runs
-import store
+from engine.orchestrator import agents
+from   engine.guardrails import align
+from   engine.orchestrator import jobs_runner
+from   engine.orchestrator import runs
+from   engine.storage import store
 
 N = 200
 FAIL = []

@@ -10,7 +10,7 @@ PDF / DOCX 的解析统一走 engine/docparse.py（纯标准库实现）。
 而不是让它悄悄变成一段评审依据。
 """
 import os
-import sys
+import   sys
 
 # 允许从 engine/ 导入 docparse（本文件位于 skills/resume-parse/）
 _ENGINE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),

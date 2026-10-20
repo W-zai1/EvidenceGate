@@ -1,12 +1,12 @@
-"""验证口径签名的"自动失效"特性：改提示词/温度必须自动换版本号。"""
+﻿"""验证口径签名的"自动失效"特性：改提示词/温度必须自动换版本号。"""
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
-import agents
-import rubric
+from engine.orchestrator import agents
+from   engine.orchestrator import rubric
 
 FAIL = []
 
@@ -97,7 +97,7 @@ print("\n--- 7. 每个 _agent_turn 调用都必须显式传 temperature ---")
 import ast as _ast
 
 _src = open(os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))), "engine", "agents.py"), encoding="utf-8").read()
+    os.path.abspath(__file__))), "engine", "orchestrator", "agents.py"), encoding="utf-8").read()
 _tree = _ast.parse(_src)
 _calls = []
 

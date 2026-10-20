@@ -1,17 +1,17 @@
-"""迁移 7：evaluations 表 + 历史回填。"""
+﻿"""迁移 7：evaluations 表 + 历史回填。"""
 import os
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "m7.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 
@@ -27,9 +27,9 @@ def check(name, ok, detail=""):
 db.init()
 conn = db.connect()
 print("schema_version =", db.SCHEMA_VERSION)
-check("迁移到 v7", db.SCHEMA_VERSION == 7)
+check("迁移到最新版", db.SCHEMA_VERSION >= 10)
 ver = conn.execute("SELECT MAX(version) v FROM schema_migrations").fetchone()["v"]
-check("schema_migrations 记录到 7", ver == 7, ver)
+check("schema_migrations 记录到最新版", ver == db.SCHEMA_VERSION, ver)
 
 tables = {r["name"] for r in conn.execute(
     "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -47,7 +47,7 @@ need = {"id", "candidate_id", "job_id", "run_id", "total", "grade",
 check("字段齐全", need <= cols, sorted(need - cols))
 
 print("\n--- 历史回填 ---")
-import store
+from engine.storage import store
 job = store.create_job("回填测试", {"raw_text": "x"})
 jid = job["id"] if isinstance(job, dict) else job
 with db.tx(conn) as c:

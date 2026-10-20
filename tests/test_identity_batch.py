@@ -12,20 +12,20 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "engine"))
+sys.path.insert(0, os.path.dirname(HERE))
 
 TMP = tempfile.mkdtemp()
-import db
+from engine.storage import db
 db.DATA_DIR = TMP
 db.DB_PATH = os.path.join(TMP, "batch.db")
 db.reset_init_flag()
-import crypto
+from engine.intake import crypto
 crypto._cached_key = None
 crypto._data_dir = lambda: TMP
 db.init()
 
-import api
-import store
+from engine.api import api
+from   engine.storage import store
 
 PORT = 8299
 os.environ["PORT"] = str(PORT)
@@ -39,7 +39,7 @@ def check(name, ok, detail=""):
         FAIL.append(name)
 
 
-import server as srvmod
+from engine.api import server as srvmod
 srv = srvmod._make_server()
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 
@@ -150,7 +150,7 @@ check("成功的那两条都有审计", ids[0] in targets and ids[1] in targets,
 check("审计带 actor", all(x["actor"] for x in rows), [x["actor"] for x in rows][:3])
 
 print("\n--- 4. 无权限角色被拒 ---")
-import auth
+from engine.api import auth
 auth.create_user("viewer01", "Passw0rd!x", role="viewer", display_name="只读")
 vc = Client()
 st, r = vc.req("POST", "/api/auth/login",

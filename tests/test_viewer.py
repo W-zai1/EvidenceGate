@@ -1,4 +1,4 @@
-"""前端一致性检查：app.js 引用的 DOM id 必须都在 index.html 里存在。
+﻿"""前端一致性检查：app.js 引用的 DOM id 必须都在 index.html 里存在。
 
 这类错误在浏览器里表现为 `Cannot read properties of null`，
 但 `node --check` 语法检查发现不了——必须做引用交叉核对。
@@ -33,7 +33,7 @@ print("app.js 引用 id：  %d 个" % len(used))
 print("引用但不存在：    %s" % (missing if missing else "无 ✓"))
 
 # api.js 里的路径必须都能在 api.py 找到对应路由
-routes = open(os.path.join(os.path.dirname(HERE), "engine", "api.py"), encoding="utf-8").read()
+routes = open(os.path.join(os.path.dirname(HERE), "engine", "api", "api.py"), encoding="utf-8").read()
 declared = []
 for m in re.finditer(r'@route\(\s*"(GET|POST|PUT|PATCH|DELETE)"\s*,\s*"([^"]+)"', routes):
     declared.append(re.sub(r":\w+", "*", m.group(2)))

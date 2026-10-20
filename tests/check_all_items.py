@@ -7,7 +7,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "engine"))
+sys.path.insert(0, ROOT)
 
 
 def read(p):
@@ -70,7 +70,7 @@ item("P0-4", "多信号身份判定（姓名/学历/城市/工作经历）",
 s = read("engine/db.py")
 # 版本号不写死在这里：写死的数字每次加迁移都要手改，迟早忘记，
 # 于是检查会说"5 个迁移"而实际是 7 个——一条永远为真、也永远没用的断言。
-import db as _db
+from engine.storage import db as _db
 _migrations = re.findall(r"@_migration\((\d+)\)", s)
 item("P1-5", "SQLite 迁移 + schema_version",
      "SCHEMA_VERSION" in s and "schema_migrations" in s and "_MIGRATIONS" in s,

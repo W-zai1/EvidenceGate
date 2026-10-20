@@ -1,0 +1,427 @@
+/* =====================================================================
+   EvidenceGate · 案件 / 证据链校验 视图
+   ---------------------------------------------------------------------
+   只依赖变量，因此浅色（styles.css）与深色（styles-dark.css）共用。
+   状态色在深色下需要更亮，所以在 html[data-theme="dark"] 里另给一组。
+   ===================================================================== */
+:root{
+  --ev-ok:#0e7a4a;      --ev-ok-bg:#e9f6ef;      --ev-ok-line:#bce0cc;
+  --ev-warn:#8a5300;    --ev-warn-bg:#fff6e6;    --ev-warn-line:#f0d6a4;
+  --ev-bad:#a32319;     --ev-bad-bg:#fcecea;     --ev-bad-line:#f0c7c1;
+  --ev-info:#1d4ed8;    --ev-info-bg:#eaf0fe;    --ev-info-line:#c9d8fa;
+  --ev-idle:#5b6472;    --ev-idle-bg:#f1f3f6;    --ev-idle-line:#dde1e7;
+  --ev-surface:#ffffff;
+  --ev-sunken:#f7f8fa;
+  --ev-mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Consolas",monospace;
+}
+html[data-theme="dark"]{
+  --ev-ok:#7ae2a8;      --ev-ok-bg:rgba(122,226,168,.12); --ev-ok-line:rgba(122,226,168,.35);
+  --ev-warn:#ffd97a;    --ev-warn-bg:rgba(255,217,122,.12); --ev-warn-line:rgba(255,217,122,.35);
+  --ev-bad:#ff9aa8;     --ev-bad-bg:rgba(255,122,154,.12);  --ev-bad-line:rgba(255,122,154,.35);
+  --ev-info:#8ab4ff;    --ev-info-bg:rgba(138,180,255,.12); --ev-info-line:rgba(138,180,255,.35);
+  --ev-idle:#9fb0d0;    --ev-idle-bg:rgba(160,180,220,.10); --ev-idle-line:rgba(160,180,220,.28);
+  --ev-surface:#111834; --ev-sunken:rgba(146,164,204,.08);
+}
+
+.ev-wrap{max-width:1280px;margin:0 auto;padding:6px 4px 40px}
+.ev-head{display:flex;align-items:flex-end;gap:16px;margin:6px 0 18px}
+.ev-head h2{font-size:22px;font-weight:750;letter-spacing:-.02em;margin:0}
+.ev-head p{color:var(--muted);font-size:12.5px;margin:5px 0 0;max-width:820px;line-height:1.6}
+.ev-head .acts{margin-left:auto;display:flex;gap:8px;flex:none}
+
+.ev-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.ev-stat{background:var(--ev-surface);border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+.ev-stat .v{font-size:24px;font-weight:750;letter-spacing:-.02em}
+.ev-stat .l{font-size:11.5px;color:var(--muted);margin-top:3px}
+.ev-stat.warn .v{color:var(--ev-warn)}
+.ev-stat.bad .v{color:var(--ev-bad)}
+.ev-stat.ok .v{color:var(--ev-ok)}
+
+.ev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.ev-case{
+  background:var(--ev-surface);border:1px solid var(--line);border-radius:12px;
+  padding:15px 16px;cursor:pointer;transition:border-color .15s, box-shadow .15s, transform .15s;
+}
+.ev-case:hover{border-color:var(--line-strong);box-shadow:0 8px 22px rgba(16,24,40,.07);transform:translateY(-1px)}
+.ev-case .top{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+.ev-case h3{font-size:14.5px;font-weight:700;margin:0;line-height:1.4}
+.ev-case .sub{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:11px;color:var(--muted)}
+.ev-prof{font-family:var(--ev-mono);font-size:10.5px;color:var(--muted);background:var(--ev-sunken);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.ev-case .nums{display:flex;gap:16px;margin-top:12px;font-size:11.5px;color:var(--muted)}
+.ev-case .nums b{color:var(--ink);font-weight:700;font-size:13px}
+.ev-case .tail{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:11px;color:var(--muted)}
+.ev-case .tail .mono{font-family:var(--ev-mono);font-size:10.5px}
+
+.ev-status{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:650;border:1px solid;white-space:nowrap;flex:none}
+.ev-status .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.ev-status.pass{color:var(--ev-ok);background:var(--ev-ok-bg);border-color:var(--ev-ok-line)}
+.ev-status.warn{color:var(--ev-warn);background:var(--ev-warn-bg);border-color:var(--ev-warn-line)}
+.ev-status.human{color:var(--ev-info);background:var(--ev-info-bg);border-color:var(--ev-info-line)}
+.ev-status.fail{color:var(--ev-bad);background:var(--ev-bad-bg);border-color:var(--ev-bad-line)}
+.ev-status.idle{color:var(--ev-idle);background:var(--ev-idle-bg);border-color:var(--ev-idle-line)}
+
+.ev-empty{
+  border:1px dashed var(--line-strong);border-radius:12px;padding:44px 20px;text-align:center;
+  color:var(--muted);background:var(--ev-sunken);font-size:12.5px;
+}
+
+/* ---- 案件详情 ---- */
+.ev-detail-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:4px}
+.ev-detail-head h2{font-size:18px;margin:0}
+.ev-detail-head .meta{margin-top:6px;font-size:11.5px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+.ev-sec{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.ev-sec-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ev-sec-h h4{margin:0;font-size:12px;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+.ev-sec-h .right{margin-left:auto;font-size:11px;color:var(--muted)}
+
+.ev-table{width:100%;border-collapse:collapse;font-size:12px}
+.ev-table th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line);font-weight:650}
+.ev-table td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.ev-table tr:last-child td{border-bottom:0}
+.ev-table .code{font-family:var(--ev-mono);font-size:11px;color:var(--muted)}
+.ev-table .num{text-align:right;font-family:var(--ev-mono);font-size:11px;color:var(--muted)}
+
+.ev-claim{display:grid;grid-template-columns:18px minmax(0,1fr);gap:9px;padding:10px 0;border-top:1px dashed var(--line)}
+.ev-claim:first-child{border-top:0}
+.ev-claim .n{width:18px;height:18px;border-radius:5px;background:var(--ev-sunken);color:var(--muted);font-size:10px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+.ev-claim .txt{font-size:12.5px;line-height:1.55}
+.ev-claim .why{margin-top:5px;font-size:11px;color:var(--k);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ev-claim.unsupported .txt{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--ev-bad);text-decoration-thickness:1.5px}
+.ev-claim.unsupported .n{background:var(--ev-bad-bg);color:var(--ev-bad)}
+.ev-cite{
+  display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px;
+  font-size:10.5px;font-weight:650;color:var(--ev-info);
+  background:var(--ev-info-bg);border:1px solid var(--ev-info-line);
+  font-family:var(--ev-mono);cursor:pointer;
+}
+.ev-cite:hover{filter:brightness(.96)}
+
+.ev-verdict{display:flex;align-items:center;gap:14px;padding:4px 0 2px}
+.ev-verdict .glyph{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;font-weight:800;flex:none}
+.ev-verdict .word{font-size:28px;font-weight:750;letter-spacing:-.02em;line-height:1.05}
+.ev-verdict .note{font-size:11.5px;color:var(--muted);margin-top:3px}
+.ev-verdict.pass .glyph{background:var(--ev-ok-bg);color:var(--ev-ok);border:1px solid var(--ev-ok-line)}
+.ev-verdict.pass .word{color:var(--ev-ok)}
+.ev-verdict.warn .glyph{background:var(--ev-warn-bg);color:var(--ev-warn);border:1px solid var(--ev-warn-line)}
+.ev-verdict.warn .word{color:var(--ev-warn)}
+.ev-verdict.fail .glyph{background:var(--ev-bad-bg);color:var(--ev-bad);border:1px solid var(--ev-bad-line)}
+.ev-verdict.fail .word{color:var(--ev-bad)}
+.ev-verdict.human .glyph{background:var(--ev-info-bg);color:var(--ev-info);border:1px solid var(--ev-info-line)}
+.ev-verdict.human .word{color:var(--ev-info)}
+
+.ev-kvs{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:14px}
+.ev-kv{padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--ev-sunken)}
+.ev-kv .k{font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:650;text-transform:uppercase}
+.ev-kv .v{font-size:12.5px;font-weight:650;margin-top:2px;word-break:break-all}
+.ev-kv .v.mono{font-family:var(--ev-mono);font-size:11px;font-weight:500}
+
+.ev-sign{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ev-sign .who{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:11.5px;background:var(--ev-sunken)}
+.ev-sign .who b{font-weight:700}
+.ev-sign .who.missing{color:var(--muted);border-style:dashed}
+.ev-sign button.who{font:inherit;font-size:11.5px;cursor:pointer;background:transparent}
+.ev-sign button.who:hover{border-color:var(--ev-info);color:var(--ev-info)}
+
+.ev-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+
+/* ---- 证据链校验 ---- */
+.ev-split{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.ev-check{display:grid;grid-template-columns:76px minmax(0,1fr) 200px 84px;gap:12px;align-items:center;padding:11px 12px;border-top:1px solid var(--line);font-size:12px}
+.ev-check:first-child{border-top:0}
+.ev-check .id{font-family:var(--ev-mono);font-size:10.5px;color:var(--muted)}
+.ev-check .title{font-weight:650}
+.ev-check .title small{display:block;font-weight:400;color:var(--muted);margin-top:2px;font-size:11px;line-height:1.45}
+.ev-check .val{font-family:var(--ev-mono);font-size:11.5px;color:var(--ink);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-check .st{justify-self:end}
+
+.ev-do{background:var(--ev-surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.ev-do h4{margin:0 0 8px;font-size:12px;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+.ev-do .row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px dashed var(--line);font-size:12px}
+.ev-do .row:first-of-type{border-top:0}
+.ev-do .row .k{color:var(--muted)}
+.ev-do .row .mono{font-family:var(--ev-mono);font-size:11px}
+.ev-list{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.ev-list li{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--muted);padding:5px 0;border-top:1px dashed var(--line)}
+.ev-list li:first-child{border-top:0}
+.ev-list .mono{font-family:var(--ev-mono);font-size:10.5px}
+
+.ev-banner{display:flex;gap:10px;padding:10px 12px;border-radius:9px;font-size:11.5px;line-height:1.55;margin-top:14px}
+.ev-banner.info{background:var(--ev-info-bg);border:1px solid var(--ev-info-line);color:var(--ev-info)}
+.ev-banner.warn{background:var(--ev-warn-bg);border:1px solid var(--ev-warn-line);color:var(--ev-warn)}
+.ev-banner b{font-weight:700}
+
+.ev-form{display:grid;gap:8px;margin-top:10px}
+.ev-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ev-form label{font-size:10.5px;letter-spacing:.05em;color:var(--muted);font-weight:650;text-transform:uppercase}
+.ev-form input,.ev-form textarea,.ev-form select{width:100%;font:inherit;font-size:12px;padding:7px 9px;border-radius:7px;border:1px solid var(--line-strong);background:var(--ev-surface);color:var(--ink)}
+.ev-form textarea{resize:vertical;min-height:56px}
+
+@media (max-width:1100px){
+  .ev-split{grid-template-columns:minmax(0,1fr)}
+  .ev-check{grid-template-columns:66px minmax(0,1fr) 110px}
+  .ev-check .val{display:none}
+}
+@media (max-width:720px){
+  .ev-stats{grid-template-columns:repeat(2,1fr)}
+  .ev-head{flex-direction:column;align-items:flex-start}
+  .ev-head .acts{margin-left:0}
+}
+
+/* ---- 登录页品牌标记（原始「正反对撞 + 裁判恒星」，深浅各自取色） ---- */
+.auth-logo{display:flex;justify-content:center;margin-bottom:2px}
+.auth-mark{
+  display:inline-grid;place-items:center;width:48px;height:48px;
+  background:transparent;box-shadow:none;
+}
+.auth-mark .ic-pro{fill:#2a55c4}
+.auth-mark .ic-con{fill:#c0304a}
+.auth-mark .ic-halo{fill:rgba(138,83,0,.14)}
+.auth-mark .ic-star{fill:#8a5300}
+html[data-theme="dark"] .auth-mark .ic-pro{fill:#6ea8ff}
+html[data-theme="dark"] .auth-mark .ic-con{fill:#ff7a9a}
+html[data-theme="dark"] .auth-mark .ic-halo{fill:rgba(255,217,122,.16)}
+html[data-theme="dark"] .auth-mark .ic-star{fill:#ffd97a}
+.auth-brand{
+  margin:12px 0 6px;text-align:center;font-size:12px;font-weight:750;
+  letter-spacing:.24em;text-transform:uppercase;color:var(--muted);
+}
+html[data-theme="dark"] .auth-card h2{color:#e8ecff}
+html[data-theme="dark"] .auth-sub{color:#b9c6e0}
+html[data-theme="dark"] .auth-note{color:#9fb0d0;border-top-color:rgba(140,160,255,.18)}
+
+/* =====================================================================
+   控制台（门户）：EvidenceGate 门面 + 分系统入口
+   ---------------------------------------------------------------------
+   顶层不放岗位/人才库这类业务页签。业务属于某个分系统，进去之后才有
+   自己的子导航；顶层只保留跨系统的东西（案件、证据链、管理）。
+   ===================================================================== */
+.portal{max-width:1160px;margin:0 auto;padding:46px 24px 64px}
+.portal-hero{text-align:center;padding:24px 0 34px}
+.portal-mark{display:inline-grid;place-items:center;width:60px;height:60px;margin-bottom:6px}
+.portal-mark .ic-pro{fill:#2a55c4}
+.portal-mark .ic-con{fill:#c0304a}
+.portal-mark .ic-halo{fill:rgba(138,83,0,.14)}
+.portal-mark .ic-star{fill:#8a5300}
+html[data-theme="dark"] .portal-mark .ic-pro{fill:#6ea8ff}
+html[data-theme="dark"] .portal-mark .ic-con{fill:#ff7a9a}
+html[data-theme="dark"] .portal-mark .ic-halo{fill:rgba(255,217,122,.16)}
+html[data-theme="dark"] .portal-mark .ic-star{fill:#ffd97a}
+
+.portal-title{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1.05;color:var(--ink)}
+.portal-cn{margin-top:8px;font-size:14px;letter-spacing:.34em;color:var(--muted);text-indent:.34em}
+.portal-sub{margin:14px auto 0;font-size:12.5px;color:var(--muted);letter-spacing:.02em}
+
+.portal-section-h{
+  display:flex;align-items:baseline;gap:12px;
+  margin:6px 0 12px;font-size:11px;letter-spacing:.16em;color:var(--muted);
+  text-transform:uppercase;font-weight:700;
+}
+.portal-section-h .muted{font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+
+.portal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.sys-card{
+  display:flex;flex-direction:column;gap:8px;text-align:left;
+  padding:18px 18px 15px;border-radius:14px;
+  background:var(--ev-surface);border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(16,24,40,.04);
+  font:inherit;color:inherit;cursor:pointer;
+  transition:border-color .16s, box-shadow .16s, transform .16s;
+}
+.sys-card:hover{border-color:var(--line-strong);box-shadow:0 10px 26px rgba(16,24,40,.08);transform:translateY(-2px)}
+.sys-card.soon{cursor:default;opacity:.72}
+.sys-card.soon:hover{border-color:var(--line);box-shadow:none;transform:none}
+.sys-ico{
+  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  background:var(--accent-50,#eef3fd);color:var(--accent,#2a55c4);
+  font-size:14px;font-weight:750;margin-bottom:2px;
+}
+.sys-card.soon .sys-ico{background:var(--ev-sunken);color:var(--muted)}
+.sys-name{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.sys-desc{font-size:11.5px;line-height:1.65;color:var(--muted);min-height:38px}
+.sys-foot{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+.sys-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid}
+.sys-badge.live{color:var(--ev-ok);background:var(--ev-ok-bg);border-color:var(--ev-ok-line)}
+.sys-badge.soon{color:var(--ev-idle);background:var(--ev-idle-bg);border-color:var(--ev-idle-line)}
+.sys-go{font-size:11px;font-weight:650;color:var(--accent,#2a55c4)}
+.portal-foot{margin-top:30px;text-align:center;font-size:10.5px;color:var(--faint,var(--muted))}
+
+/* ---- 子系统壳 ---- */
+.sysbar{
+  position:sticky;top:56px;z-index:8;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:0 0 10px;padding:9px 22px;
+  background:var(--ev-surface);
+  border-bottom:1px solid var(--line);
+  box-shadow:0 2px 8px rgba(16,24,40,.04);
+  border:1px solid var(--line);border-radius:12px;
+}
+.sysbar-name{font-size:12px;font-weight:750;letter-spacing:.02em;color:var(--ink)}
+.sysbar-tabs{display:inline-flex;padding:2px;background:var(--ev-sunken);border-radius:9px;gap:2px;margin-left:4px}
+.sysbar-tab{
+  border:0;background:transparent;font:inherit;font-size:11.5px;font-weight:600;
+  color:var(--muted);padding:5px 11px;border-radius:7px;cursor:pointer;
+}
+.sysbar-tab:hover{color:var(--ink)}
+.sysbar-tab.on{background:var(--ev-surface);color:var(--ink);box-shadow:0 1px 2px rgba(16,24,40,.10)}
+.sysbar > .btn:last-child{margin-left:auto}
+
+@media (max-width:1000px){
+  .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .portal-title{font-size:38px}
+}
+@media (max-width:680px){
+  .portal{padding:30px 16px 48px}
+  .portal-grid{grid-template-columns:minmax(0,1fr)}
+  .portal-title{font-size:32px}
+  .sysbar{top:0;padding:8px 12px}
+  .sysbar-name{display:none}
+}
+
+/* =====================================================================
+   加载状态：启动层 / 行内等待 / 按钮忙碌
+   ---------------------------------------------------------------------
+   原则：等待也要说明"在等什么"，不要只转一个圈。启动层给出会话校验，
+   行内给出正在读取的对象，按钮给出动作名（文字由 JS 换）。
+   所有动画在 prefers-reduced-motion 下停掉，但保留静态提示。
+   ===================================================================== */
+.boot-loader{
+  position:fixed;inset:0;z-index:900;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:#f4f5f7;
+  transition:opacity .42s ease, visibility .42s ease;
+}
+.boot-loader.done{opacity:0;visibility:hidden}
+html[data-theme="dark"] .boot-loader{
+  background:#050816;
+}
+.boot-mark{position:relative;width:52px;height:52px;display:grid;place-items:center;
+  animation:eg-breathe 2.4s ease-in-out infinite}
+.boot-mark .ic-pro{fill:#2a55c4}
+.boot-mark .ic-con{fill:#c0304a}
+.boot-mark .ic-halo{fill:rgba(138,83,0,.14)}
+.boot-mark .ic-star{fill:#8a5300}
+html[data-theme="dark"] .boot-mark .ic-pro{fill:#6ea8ff}
+html[data-theme="dark"] .boot-mark .ic-con{fill:#ff7a9a}
+html[data-theme="dark"] .boot-mark .ic-halo{fill:rgba(255,217,122,.16)}
+html[data-theme="dark"] .boot-mark .ic-star{fill:#ffd97a}
+.boot-ring{
+  position:absolute;inset:-13px;border-radius:50%;
+  border:2px solid transparent;border-top-color:#2a55c4;border-left-color:rgba(42,85,196,.22);
+  animation:eg-spin 1.05s linear infinite;
+}
+html[data-theme="dark"] .boot-ring{border-top-color:#ffd97a;border-left-color:rgba(255,217,122,.22)}
+.boot-title{font-size:17px;font-weight:750;letter-spacing:.06em;color:var(--ink)}
+.boot-sub{font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+
+/* 行内等待：用于卡片、表格、抽屉 */
+.load-block{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:38px 14px;color:var(--muted);font-size:12px;
+}
+/* 让等待块在网格里横跨整行，而不是被塞进第一格 */
+.ev-grid > .load-block,
+.portal-grid > .load-block,
+.talent-grid > .load-block,
+.job-grid > .load-block{grid-column:1 / -1}
+.load-dots{display:inline-flex;gap:4px;align-items:center}
+.load-dots i{
+  width:6px;height:6px;border-radius:50%;background:var(--accent,#2a55c4);
+  animation:eg-dot 1.15s ease-in-out infinite;
+}
+.load-dots i:nth-child(2){animation-delay:.14s;opacity:.8}
+.load-dots i:nth-child(3){animation-delay:.28s;opacity:.6}
+html[data-theme="dark"] .load-dots i{background:#ffd97a}
+
+/* 按钮忙碌：保留文字，前置一个环 */
+.btn.is-loading{pointer-events:none;opacity:.86}
+.btn.is-loading::before{
+  content:"";display:inline-block;width:11px;height:11px;margin-right:7px;
+  border:2px solid currentColor;border-right-color:transparent;border-radius:50%;
+  vertical-align:-1px;animation:eg-spin .72s linear infinite;
+}
+
+@keyframes eg-spin{to{transform:rotate(360deg)}}
+@keyframes eg-breathe{0%,100%{transform:scale(1);opacity:.92}50%{transform:scale(1.06);opacity:1}}
+@keyframes eg-dot{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-4px);opacity:1}}
+
+@media (prefers-reduced-motion: reduce){
+  .boot-mark,.boot-ring,.load-dots i,.btn.is-loading::before{animation:none}
+  .boot-loader{transition:none}
+}
+
+/* ---- Toast：全局提示（顶部正中，进入/淡出） ---- */
+#toastHost{
+  position:fixed;top:68px;left:0;right:0;z-index:1200;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:0 16px;pointer-events:none;
+}
+.toast{
+  display:flex;align-items:center;gap:9px;
+  max-width:min(640px,92vw);padding:9px 15px 9px 10px;
+  border-radius:11px;background:var(--ev-surface);
+  border:1px solid var(--line-strong);
+  box-shadow:0 8px 26px rgba(16,24,40,.14);
+  font-size:12.5px;line-height:1.5;color:var(--ink);
+  animation:eg-toast-in .22s ease both;
+  transition:opacity .26s ease, transform .26s ease;
+}
+.toast.out{opacity:0;transform:translateY(-8px)}
+.toast-ico{
+  width:20px;height:20px;border-radius:50%;flex:none;
+  display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;
+}
+.toast-ok .toast-ico{background:var(--ev-ok)}
+.toast-err .toast-ico{background:var(--ev-bad)}
+.toast-info .toast-ico{background:var(--ev-info)}
+.toast-msg{word-break:break-word}
+html[data-theme=dark] .toast{
+  background:#111834;border-color:rgba(140,160,255,.28);
+  box-shadow:0 12px 34px rgba(0,0,0,.45);color:#e8ecff;
+}
+@keyframes eg-toast-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){
+  .toast{animation:none;transition:none}
+}
+
+/* ---- 主张自动抽取：草稿区 ---- */
+.ev-drafts{margin:10px 0 14px;border:1px solid var(--ev-info-line);
+  background:var(--ev-info-bg);border-radius:10px;padding:10px 12px}
+.ev-drafts.hidden{display:none}
+.ev-drafts-head{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.ev-drafts-head .muted{font-size:11px;color:var(--muted);line-height:1.5}
+.ev-draft{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px dashed var(--ev-info-line)}
+.ev-draft:first-of-type{border-top:none}
+.ev-draft-chk{flex:none;padding-top:7px}
+.ev-draft-chk input{width:15px;height:15px}
+.ev-draft-body{flex:1 1 auto;display:flex;flex-direction:column;gap:5px;min-width:0}
+.ev-draft-text{border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:12.5px;background:var(--ev-surface)}
+.ev-draft-row{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.ev-draft-quote{flex:1 1 220px;min-width:160px;border:1px solid var(--line);border-radius:7px;padding:4px 8px;font-size:12px;background:var(--ev-surface)}
+.ev-draft-loc{flex:0 1 120px;min-width:90px;border:1px solid var(--line);border-radius:7px;padding:4px 8px;font-size:12px;background:var(--ev-surface)}
+.ev-draft-art{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:11.5px;max-width:200px;background:var(--ev-surface)}
+.ev-draft-x{border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px;flex:none}
+.ev-draft-x:hover{color:var(--ev-bad);background:var(--ev-bad-bg)}
+.ev-q{flex:none;font-size:11px;font-weight:650;border-radius:6px;padding:3px 7px;white-space:nowrap}
+.ev-q.ok{color:var(--ev-ok);background:var(--ev-ok-bg);border:1px solid var(--ev-ok-line)}
+.ev-q.warn{color:var(--ev-warn);background:var(--ev-warn-bg);border:1px solid var(--ev-warn-line)}
+.ev-drafts-actions{display:flex;gap:8px;margin-top:10px}
+.btn.tiny{padding:3px 9px;font-size:11.5px;border-radius:7px}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.btn.ghost:hover{border-color:var(--line-strong);color:var(--ink)}
+
+/* ---- 案件列表按场景分组 ---- */
+.ev-group{margin-bottom:22px}
+.ev-group-h{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.04em;
+  text-transform:none;margin:2px 0 10px;display:flex;gap:8px;align-items:center}
+.ev-group-h .muted{font-weight:500}
+.ev-sd{display:inline-block;font-size:10px;font-weight:650;color:var(--ev-warn);
+  background:var(--ev-warn-bg);border:1px solid var(--ev-warn-line);border-radius:5px;padding:0 5px;margin-left:6px}
+.ev-blist{margin:6px 0 0;padding-left:18px}
+.ev-blist li{font-size:12px;line-height:1.6;margin:2px 0}
+.ev-blist b{font-family:var(--ev-mono)}
+
+/* ---- 新建案件：单机单人声明 ---- */
+.check-row{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.6;
+  color:var(--muted);margin:10px 0 2px;cursor:pointer}
+.check-row input{margin-top:2px;flex:none}
+.check-row b{color:var(--ink)}

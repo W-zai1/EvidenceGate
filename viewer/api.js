@@ -273,7 +273,6 @@
     rubric: () => jsonFetch('/api/rubric'),
 
     /* ---- 启动自检（probe=1 才会真探测，结果服务端缓存 10 分钟） ---- */
-    selfcheck: (probe) => jsonFetch('/api/selfcheck' + (probe ? '?probe=1' : '')),
 
     /* ---- 批量确认身份（只支持"不是同一人"） ---- */
     batchIdentity: (items) => post('/api/identity/batch-confirm', { items: items }),
@@ -281,6 +280,20 @@
     /* ---- 岗位级评审细则（权重 + 每维"看什么"） ---- */
     jobRubric: (jid) => jsonFetch('/api/jobs/' + enc(jid) + '/rubric'),
     jobRubricSave: (jid, d) => put('/api/jobs/' + enc(jid) + '/rubric', d || {}),
+
+    /* ---- EvidenceGate：场景 / 案件 / 证据链 ---- */
+    profiles:      ()          => jsonFetch('/api/profiles'),
+    cases:         ()          => jsonFetch('/api/cases'),
+    caseDetail:    (cid)       => jsonFetch('/api/cases/' + enc(cid)),
+    caseCreate:    (d)         => post('/api/cases', d),
+    caseArtifact:  (cid, d)    => post('/api/cases/' + enc(cid) + '/artifacts', d),
+    caseClaims:    (cid, d)    => post('/api/cases/' + enc(cid) + '/claims', d),
+    caseGate:      (cid)       => post('/api/cases/' + enc(cid) + '/gate', {}),
+    caseExtract:   (cid)       => post('/api/cases/' + enc(cid) + '/extract-claims', {}),
+    caseSign:      (cid, d)    => post('/api/cases/' + enc(cid) + '/sign', d || {}),
+    caseDelete:    (cid)       => jsonFetch('/api/cases/' + enc(cid), { method: 'DELETE' }),
+    caseBundle:    (cid, d)    => post('/api/cases/' + enc(cid) + '/bundle', d || {}),
+    goldenThread:  ()          => jsonFetch('/api/validation/golden-thread'),
   };
 
   window.API = API;

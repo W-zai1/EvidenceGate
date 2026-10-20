@@ -11,15 +11,15 @@
 用法：
     python tools/seed_demo.py                 # 注入默认演示岗位
     python tools/seed_demo.py --jobs 3        # 注入 3 个岗位
-    python tools/seed_demo.py --base http://127.0.0.1:8123 --user admin --pass xxx
+    python tools/seed_demo.py --base http://127.0.0.1:8124 --user admin --pass xxx
     python tools/seed_demo.py --dry-run       # 只打印将创建什么
 
 依赖：只用标准库（与本项目零依赖约束一致）。
 """
 import argparse
-import json
+import   json
 import sys
-import urllib.error
+import   urllib.error
 import urllib.request
 
 DEMO_TAG = "[演示]"
@@ -107,7 +107,7 @@ def call(base, method, path, body=None, jar=None):
 
 def main():
     ap = argparse.ArgumentParser(description="注入演示数据（虚构候选人）")
-    ap.add_argument("--base", default="http://127.0.0.1:8123",
+    ap.add_argument("--base", default="http://127.0.0.1:8124",
                     help="服务地址")
     ap.add_argument("--user", default="admin01")
     ap.add_argument("--password", default="Passw0rd!x")

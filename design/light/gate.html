@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EvidenceGate · 闸门裁定 G-03</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .verdictcard{padding:20px}
+  .verdictcard .top{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+  .verdictcard .big{display:flex;align-items:center;gap:12px}
+  .verdictcard .big .glyph{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--bad-bg);border:1px solid var(--bad-line);color:var(--bad)}
+  .verdictcard .big .word{display:block;font-size:32px;font-weight:750;color:var(--bad);letter-spacing:-.02em;line-height:1}
+  .verdictcard .big .sub{display:block;font-size:12px;color:var(--muted);margin-top:5px}
+  .verdictcard .why-not{margin-left:auto;text-align:left;font-size:12px;color:var(--muted);max-width:36ch;border-left:1px solid var(--line);padding-left:14px}
+  .formula{
+    margin-top:14px;padding:11px 13px;border-radius:var(--radius-sm);
+    background:var(--surface-2);border:1px dashed var(--line-2);
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-2);line-height:1.8;
+  }
+  .formula b{color:var(--bad)}
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .cmp .box{border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 12px;background:var(--surface)}
+  .cmp .box .h{font-size:10.5px;letter-spacing:.06em;color:var(--faint);font-weight:700}
+  .cmp .box .r{font-size:16px;font-weight:700;margin-top:3px}
+  .cmp .box .e{font-size:11px;color:var(--muted);margin-top:2px}
+  .cmp .box.bad{border-color:var(--bad-line);background:var(--bad-bg)}
+  .cmp .box.bad .r{color:var(--bad)}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>
+        </svg>
+      </span>
+      <span>
+        <span class="name">Evidence<em>Gate</em></span>
+        <span class="sub">证据裁定台</span>
+      </span>
+    </div>
+
+    <nav class="crumbs" aria-label="面包屑">
+      <span>案件</span><span class="sep">/</span>
+      <span>AP-2025-0412 · 供应商对账</span><span class="sep">/</span>
+      <span>裁定</span><span class="sep">/</span>
+      <span class="cur">闸门 G-03</span>
+    </nav>
+
+    <span class="spacer"></span>
+
+    <div class="right">
+      <button class="chip tap"><span class="dot" style="background:var(--accent)"></span>场景 · 财务审计</button>
+      <span class="chip soft mono">ENV · DEV</span>
+      <span class="chip bad"><span class="dot"></span>待复核</span>
+      <span class="avatar">王</span>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <div class="pagehead">
+    <div class="t">
+      <h1>闸门 G-03 · 出具前硬门</h1>
+      <p>非补偿判定：硬性缺口未闭合，整组发现不得出具。分数、置信度、等级都<strong>不参与</strong>闸门计算。</p>
+    </div>
+    <div class="acts">
+      <button class="btn">查看缺口明细</button>
+      <button class="btn primary">指派复核人</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <section class="stack">
+
+      <!-- 裁定卡 -->
+      <div class="card verdictcard">
+        <div class="top">
+          <div class="big">
+            <span class="glyph">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg>
+            </span>
+            <span>
+              <span class="word">阻断</span>
+              <span class="sub">3 类缺口未闭合 · 0 项可补偿</span>
+            </span>
+          </div>
+          <div class="why-not">
+            这一页不是「评分结果」。它是「证据是否足以支撑出具」的二值判定，外加一份必须由人签的缺口清单。
+          </div>
+        </div>
+
+        <div class="block-note">
+          <div><div class="k">条款</div><div class="v">5 条 · 闭合 2</div></div>
+          <div><div class="k">未闭合</div><div class="v bad">3 条</div></div>
+          <div><div class="k">加权分（不参与判定）</div><div class="v">85.6</div></div>
+          <div><div class="k">可出具</div><div class="v bad">否</div></div>
+        </div>
+      </div>
+
+      <!-- 条款 -->
+      <div class="card">
+        <div class="card-head">
+          <h2>闸门条款</h2>
+          <span class="hint">每条都可追溯到具体证据或明确缺口</span>
+        </div>
+        <div class="tablewrap">
+          <table class="clause">
+            <thead>
+              <tr><th style="width:62px">条款</th><th>要求</th><th style="width:112px">判定</th><th>证据 / 缺口</th><th style="width:96px">结果</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">G3.1</td>
+                <td>每条实质主张有可解析源；准则要求披露的事项不得缺失</td>
+                <td>8/9 可回链</td>
+                <td>缺 <b>关联方声明</b>（1 份）· 关联方主张已剔除但披露项仍缺证</td>
+                <td><span class="st bad"><span class="ico">×</span>未闭合</span></td>
+              </tr>
+              <tr>
+                <td class="code">G3.2</td>
+                <td>不存在未决的跨材料矛盾</td>
+                <td>0 处</td>
+                <td>金额 3 处一致 · 日期无冲突</td>
+                <td><span class="st ok"><span class="ico">✓</span>闭合</span></td>
+              </tr>
+              <tr>
+                <td class="code">G3.3</td>
+                <td>专业判断事项已由具名复核人确认（DEFER 不得当作通过）</td>
+                <td>0/2 已确认</td>
+                <td>准则适用性 2 项挂起 · 未指派确认人</td>
+                <td><span class="st bad"><span class="ico">×</span>未闭合</span></td>
+              </tr>
+              <tr>
+                <td class="code">G3.4</td>
+                <td>编制 / 复核 / 批准 三级分离，且不为同一人</td>
+                <td>1 编制 / 0 复核</td>
+                <td>复核人未指派 · 批准未开始</td>
+                <td><span class="st bad"><span class="ico">×</span>未闭合</span></td>
+              </tr>
+              <tr>
+                <td class="code">G3.5</td>
+                <td>留痕链连续且可导出核验</td>
+                <td>418 条连续</td>
+                <td>链头未外部锚定 → 记为「闭合，附保留」</td>
+                <td><span class="st ok"><span class="ico">✓</span>闭合*</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-body" style="padding-top:10px;padding-bottom:12px;border-top:1px solid var(--line)">
+          <p class="muted" style="font-size:11.5px">* G3.5 的「保留」：本地哈希链只能证明库内未被改动，不能证明链头本身未被整体替换。外部时间戳锚定上线前，对第三方只能承诺「可核验」，不能承诺「不可篡改」。</p>
+        </div>
+      </div>
+
+      <!-- 非补偿 -->
+      <div class="card">
+        <div class="card-head">
+          <h2>为什么 85.6 分不能放行</h2>
+          <span class="hint">非补偿门控 · AND 而非加权平均</span>
+        </div>
+        <div class="card-body">
+          <div class="meter">
+            <div class="row"><span>证据覆盖</span><span class="track"><span class="fill warn" style="width:89%"></span></span><span class="val">89%</span></div>
+            <div class="row"><span>引用可回链</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">100%</span></div>
+            <div class="row"><span>算术 / 交叉核对</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">100%</span></div>
+            <div class="row"><span>专业判断已确认</span><span class="track"><span class="fill bad" style="width:0%"></span></span><span class="val">0/2</span></div>
+          </div>
+
+          <div class="formula">
+            gate = G3.1 ∧ G3.2 ∧ G3.3 ∧ G3.4 ∧ G3.5<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <b>false</b> &nbsp;← 任一 false 即阻断，不存在「用分数补回来」<br>
+            加权平均（本系统<span style="font-style:italic">不采用</span>）: 0.4×89 + 0.3×100 + 0.2×100 + 0.1×0 = <b>85.6 → 通过</b>（错误）
+          </div>
+
+          <div class="cmp">
+            <div class="box"><div class="h">打分型系统</div><div class="r">85.6 → 通过</div><div class="e">缺口被高权重维度稀释，缺失证据静默消失</div></div>
+            <div class="box bad"><div class="h">EvidenceGate 闸门</div><div class="r">AND → 阻断</div><div class="e">缺口不进入加权，缺口就是缺口</div></div>
+          </div>
+
+          <p class="cmt" style="margin-top:12px">这就是「人才库系统」与「证据裁定系统」的分界线：人才库输出排序，EvidenceGate 输出<strong>能否出具</strong>，并把不能出具的原因逐条列清。</p>
+        </div>
+      </div>
+
+      <div class="banner">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+        <div>闸门是<strong>确定性函数</strong>：同样的缺口集合永远得到同样的判定。它不调用模型，也不能被提示词说服。这是它可被审计的前提。</div>
+      </div>
+
+      <div class="footnote">
+        <span class="mono">gate:G-03@audit.tw-1</span>
+        <span class="mono">clauses 5 · blocking 3</span>
+        <span>判定于 2025-12-12 22:43</span>
+        <span class="faint">原型示例数据，非真实案件</span>
+      </div>
+    </section>
+
+    <!-- 侧栏：三级复核 + 留痕 -->
+    <aside class="stack">
+      <div class="card">
+        <div class="card-head" style="padding:12px 18px">
+          <h2>三级复核</h2>
+          <span class="hint">人签，不是 agent 签</span>
+        </div>
+        <div class="card-body" style="padding:8px 18px 14px">
+          <div class="sign">
+            <div class="row">
+              <span class="role">编 制</span>
+              <span class="who">张 × <span>财务共享中心 · 12-12 22:41</span></span>
+              <span class="st ok"><span class="ico">✓</span>已签</span>
+            </div>
+            <div class="row">
+              <span class="role">复 核</span>
+              <span class="who" style="color:var(--muted)">未指派 <span>需独立于编制人</span></span>
+              <span class="st idle"><span class="ico">–</span>待办</span>
+            </div>
+            <div class="row">
+              <span class="role">批 准</span>
+              <span class="who" style="color:var(--muted)">未开始 <span>复核通过后方可发起</span></span>
+              <span class="st idle"><span class="ico">–</span>待办</span>
+            </div>
+          </div>
+          <button class="btn sm" style="width:100%;justify-content:center;margin-top:12px">指派复核人</button>
+          <p class="cmt">系统不会自动签字，也不会把「模型认为可以」当作复核通过。</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head" style="padding:12px 18px">
+          <h2>留痕与锚定</h2>
+        </div>
+        <div class="card-body">
+          <dl class="kv">
+            <dt>链长度</dt><dd class="mono">418 条</dd>
+            <dt>链头</dt><dd class="mono">7c20…c41</dd>
+            <dt>外部锚定</dt><dd style="color:var(--warn)">未锚定</dd>
+          </dl>
+          <p class="cmt">已覆盖：取数 · 抽取 · 裁定 · 剔除 · 闸门判定，全部 append-only。</p>
+          <div class="divider"></div>
+          <div style="display:grid;gap:7px">
+            <button class="btn sm" style="justify-content:center">导出证据包（含 verify.py）</button>
+            <button class="btn sm" style="justify-content:center">校验链完整性</button>
+          </div>
+          <p class="cmt">证据包是交付物本体：manifest + claims + 原句切片 + 离线校验脚本。客户不信任我们时，跑脚本即可。</p>
+        </div>
+      </div>
+
+      <div class="banner">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/></svg>
+        <div><strong>换场景不换这一页。</strong>人才筛选改的是 G3.1/G3.3 的条款内容与角色名，闸门结构、复核层级、留痕格式完全一致。</div>
+      </div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>
